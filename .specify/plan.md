@@ -1,34 +1,34 @@
 # Nifty 500 Scanner — Implementation Plan
 
-**Version**: 2.0.0 | **Last Updated**: 2026-08-21
+**Version**: 2.3.0 | **Last Updated**: 2026-08-22
 
 ---
 
 ## 1. Architecture Overview
 
-Unified Streamlit application, fully local, zero cloud dependency.
+Unified Streamlit application (`streamlit_app.py`), running locally or on Streamlit Cloud, zero third-party cloud/API dependencies.
 
 ```
-Browser (Streamlit Client)
+Browser (Desktop / Mobile Client)
         ▲
         │ Websocket Connection
         ▼
-Streamlit Server (streamlit_app.py) — port 8501
+Streamlit Server (streamlit_app.py) — port 8501/8502
         │
+        ├── Session & Theme Engine     → st.session_state (Dark / Light mode)
         ├── get_nifty500_symbols()     → NSE CSV (3-URL fallback chain)
         ├── download_prices()          → yfinance batch (80/batch), Parquet cache
-        ├── get_benchmark()            → ^CRSLDX / ^NSEI fallback
+        ├── get_benchmark()            → Nifty 500 (^CRSLDX / ^NSEI fallback)
         ├── calculate_metrics()        → per-stock OHLCV → indicators
-        └── score_candidates()         → Momentum + Entry + Final Score
+        ├── score_candidates()         → Momentum + Entry + Final Score
+        └── style_dataframe()          → Theme-aware styling + TradingView deep links
                 │
-                └── Render styled dataframe in browser
+                └── Render Hero, KPIs, Controls & Dataframe
 ```
 
 ---
 
-## 2. Application Controls (`streamlit_app.py`)
-
-The user configures the scanner settings in the sidebar panel.
+## 2. Application Controls & Logic (`streamlit_app.py`)
 
 ### 2.1 Scanner Parameters
 
@@ -40,6 +40,13 @@ The user configures the scanner settings in the sidebar panel.
 | `min_adx` | 20 | Minimum ADX |
 | `max_52w` | 10 | Max % distance from 52W high |
 | `top_n` | 20 | Number of results to return |
+
+### 2.2 Dual-Theme Engine
+
+- **State Management**: `st.session_state.theme` initialized to `"dark"`.
+- **Theme Dictionaries**: `DARK` and `LIGHT` dictionaries providing complete color palettes (backgrounds, text, card borders, badges, buttons, step numbers).
+- **Dynamic CSS Injection**: Injects theme tokens dynamically on every rerun via Python formatted CSS.
+- **Top Navigation Switcher**: Secondary pill button (`☀️ Light Mode` / `🌙 Dark Mode`) in top bar.
 
 ### 2.3 Indicator Functions
 
@@ -54,12 +61,12 @@ The user configures the scanner settings in the sidebar panel.
 
 | Function | Spec Section |
 |---|---|
-| `rsi_score(x, kind)` | §4 — RSI discrete table (monthly/weekly/daily) |
-| `calc_trend_score(price, e20, e50, e200)` | §5 — 15/12/8/0 EMA alignment grades |
-| `calc_rs_score(rs_decimal)` | §9 — RS discrete bucket (>+20%=5 … <0=0) |
-| `calc_price_vs_ema20_score(price, e20)` | §13 Entry — distance above EMA20 |
-| `calc_breakout_pullback_score(...)` | §13 Entry — breakout/pullback pattern + volume |
-| `calc_rr_score(rr_ratio)` | §13 Entry — R:R quality score |
+| `rsi_score(x, kind)` | §3.2a — RSI discrete table (monthly/weekly/daily) |
+| `calc_trend_score(price, e20, e50, e200)` | §3.2a — 15/12/8/0 EMA alignment grades |
+| `calc_rs_score(rs_decimal)` | §3.2a — RS discrete bucket (>+20%=5 … <0=0) |
+| `calc_price_vs_ema20_score(price, e20)` | §3.2b Entry — distance above EMA20 |
+| `calc_breakout_pullback_score(...)` | §3.2b Entry — breakout/pullback pattern + volume |
+| `calc_rr_score(rr_ratio)` | §3.2b Entry — R:R quality score |
 
 ### 2.5 Data Pipeline
 
@@ -72,7 +79,8 @@ get_nifty500_symbols()
     → score_candidates()        [Momentum + Entry + Final Score]
     → R:R ≥ 1.5 filter
     → top_n results + Rank column
-    → JSON response
+    → style_dataframe(theme)
+    → Render interactive view
 ```
 
 ### 2.6 Output Columns
@@ -81,20 +89,23 @@ get_nifty500_symbols()
 
 ---
 
-## 3. UI Design (`streamlit_app.py`)
+## 3. UI Design Architecture (`streamlit_app.py`)
 
-### 3.1 Layout & Controls
-- **Sidebar**: Integrates 6 slider controls (Monthly/Weekly/Daily RSI, ADX, 52W distance, Top N rows) and a `Run Scanner` button.
-- **Main Panel**: Renders title, subtitle, calculation progress updates, results summary, CSV export download button, and the interactive results table.
+### 3.1 Layout & Responsiveness
+- **Desktop**: Centered `.block-container` constrained to `1040px` with auto-margins to avoid ultra-wide monitor stretching.
+- **Mobile**: Seamless full-width expansion (`100%`) with customized `@media (max-width: 640px)` queries for font scaling and card grids.
+- **Navigation & Controls**:
+  - Hidden Streamlit sidebar via CSS to provide consistent, predictable UI on Android, iOS and Desktop.
+  - Inline `st.expander` for Scanner Controls with 3-column responsive layout.
 
-### 3.2 Interactive Results Table
-- Streamlit's `st.dataframe` renders the data with automatic multi-column sorting capability.
-- Symbol tickers are formatted as clickable TradingView chart links.
-- Uses pandas `Styler` map rules to apply visual color coding:
-  - Action labels (BUY: green, WATCH: yellow, AVOID: red).
-  - RSI heat (orange if >= 70, yellow if >= 60).
-  - Return +/− (green/red).
-  - Risk/Reward ratio quality (green if >= 2.0, yellow if >= 1.5).
+### 3.2 Key Dashboard Components
+- **Top Nav**: Theme switcher button positioned cleanly in top-right.
+- **Hero Header**: Live pulsing badge, gradient title, market metadata (Nifty 500, timeframes, benchmark, timestamp).
+- **KPI Summary Grid**: 6 metric cards displaying BUY signals, Watchlist count, Top Score, Average R:R, and Qualified count.
+- **Interactive Results Table**:
+  - `style_dataframe(df, theme)` provides custom styling with WCAG-compliant contrast in both Dark and Light modes.
+  - Monospace font (`JetBrains Mono`) for financial figures.
+  - Clickable TradingView NSE chart URLs.
 
 ---
 
@@ -102,13 +113,11 @@ get_nifty500_symbols()
 
 | Decision | Rationale |
 |---|---|
-| Percentile-bucket 3M/6M scoring (not continuous rank×10) | Prevents micro-differences from having outsized impact |
-| RS discrete buckets (not rank) | Matches spec's explicit scoring table |
-| Trend Score 15/12/8/0 (not binary) | Rewards partial alignment; penalises only sub-EMA200 |
-| R:R computed before Entry Score | R:R feeds into Entry Score as a 5-pt component |
-| R:R < 1.5 gate applied after scoring | Removes technically good but risk-unattractive setups |
-| Nifty 500 benchmark (^CRSLDX → ^NSEI) | RS calculated vs same universe; Nifty 50 as safe fallback |
-| Daily Parquet cache keyed by date | Skip 500-ticker download on repeated same-day runs |
+| Unified Streamlit monolith (`streamlit_app.py`) | Streamlines deployment to Streamlit Cloud and local desktop execution in 1 command |
+| Inline expander controls (no sidebar) | Ensures controls are always visible on mobile devices where sidebars auto-collapse |
+| Max-width desktop container (`1040px`) | Prevents dashboard distortion on high-res / ultra-wide monitors |
+| Theme-aware `style_dataframe(theme)` | Guarantees high readability in both Dark and Light modes without blinding neon fonts |
+| Daily Parquet cache keyed by date | Reduces 500-ticker download from ~60s to <2s on subsequent same-day runs |
 
 ---
 
@@ -122,5 +131,3 @@ pip install -r requirements.txt
 streamlit run streamlit_app.py
 # → http://localhost:8501
 ```
-
-No Docker. No cloud. Fully local.

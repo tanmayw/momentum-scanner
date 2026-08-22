@@ -1,6 +1,6 @@
 # Nifty 500 Scanner Specification
 
-**Version**: 2.0.0 | **Last Updated**: 2026-08-21
+**Version**: 2.3.0 | **Last Updated**: 2026-08-22
 
 ---
 
@@ -111,11 +111,22 @@ Monthly RSI(14), Weekly RSI(14), Daily RSI(14), EMA 20/50/200, ADX(14), ATR(14),
 
 ## 7. UI / Output Features
 
-- **Adjustable sliders**: Monthly RSI min, Weekly RSI min, Daily RSI min, ADX min, Max 52W distance, Rows to display.
-- **Results table columns**: Rank, Symbol (TradingView link), Action, Price, Final Score, Momentum Score, Entry Score, M-RSI, W-RSI, D-RSI, ADX, Vol Ratio, R:R, Stop Loss, T1 (2%), T2 (5%), 3M%, 6M%, RS vs Nifty, Risk%.
-- **Sortable columns**: Click any column header to sort ascending/descending.
-- **CSV export**: One-click download of results as a dated CSV file.
-- **Colour coding**: RSI heat (orange/yellow), returns (green/red), R:R quality (green/yellow).
+- **Dual-Theme Engine (Dark & Light Mode)**:
+  - **Dark Terminal Theme**: Deep navy background (`#050b14`), neon accents, glassmorphism cards, glowing green primary actions.
+  - **Light Mode**: Clean slate background (`#f8fafc`), Slate-900 typography, deep Emerald (`#15803d`), warm Amber (`#b45309`), Royal Blue (`#1d4ed8`), and Crimson (`#b91c1c`) adhering to WCAG AAA contrast guidelines for optical comfort.
+  - **Seamless Theme Switcher**: Secondary pill toggle in top navigation with instantaneous state persistence (`st.session_state.theme`).
+- **Responsive Layout**:
+  - Centered max-width container on desktop (`1040px`) to prevent ultra-wide stretching.
+  - Seamless full-width adaptation on mobile viewports (Android/iOS).
+  - Inline controls expander replacing hidden/collapsed mobile sidebars.
+- **KPI Summary Dashboard**: 6 metric cards summarizing BUY Signals, Watch Candidates, Watchlist, Top Score, Average R:R, and Total Qualified Stocks.
+- **Idle Welcome State**: Floating visual icon and 4-step interactive workflow guides (Filters → Scan → Signals → Charts).
+- **Interactive Results Table**:
+  - Symbol tickers formatted as direct clickable TradingView NSE chart links.
+  - Custom monospace font (**JetBrains Mono**) for tabular numerical data and prices.
+  - Dynamic theme-aware color mapping for Action badges, RSI heat, returns (+/−), and R:R quality.
+  - Built-in multi-column sorting.
+- **Exporting**: One-click dated CSV download.
 
 ---
 
@@ -123,5 +134,5 @@ Monthly RSI(14), Weekly RSI(14), Daily RSI(14), EMA 20/50/200, ADX(14), ATR(14),
 
 - **Performance**: Frontend loads instantly. Backend scan < 30 seconds (< 3 seconds if cached).
 - **Caching**: Daily OHLCV data cached as `.parquet` in `cache/` directory, keyed by date.
-- **Security**: Fully local — no cloud APIs, no credentials exposed.
+- **Security & Portability**: Fully local execution via Streamlit — zero cloud dependencies or API keys required.
 - **Resilience**: 3-URL fallback chain for Nifty 500 constituent list.

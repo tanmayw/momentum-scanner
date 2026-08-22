@@ -1,8 +1,20 @@
 # Nifty 500 Momentum Scanner
 
-A **local, FastAPI-powered** stock screener that scans all Nifty 500 constituents using a two-layer momentum scoring system — hard eligibility filters followed by a composite Momentum + Entry quality score — to surface the best swing trading setups every evening.
+A **modern, Streamlit-powered** stock screener that scans all Nifty 500 constituents using a two-layer momentum scoring system — hard eligibility filters followed by a composite Momentum + Entry quality score — to surface the best swing trading setups every evening.
 
-> **Tech stack**: Python · FastAPI · Pandas · yfinance · Vanilla HTML/CSS/JS
+> **Tech stack**: Python · Streamlit · Pandas · yfinance · NumPy · JetBrains Mono & Inter typography
+
+---
+
+## Key Features
+
+- 🌓 **Dual-Theme Engine**: Instant toggle between **Dark Terminal Mode** and **Light Mode** (designed with accessible, eye-friendly WCAG AAA color contrast).
+- 📱 **Mobile & Desktop Optimized**: Responsive layout with centered `1040px` container on desktop and inline controls that work seamlessly on Android & iOS without hidden sidebars.
+- 📊 **6 KPI Summary Cards**: Instant count of BUY Signals, Watchlist candidates, Top Score, and Average Risk/Reward ratio.
+- ⚡ **Multi-Timeframe Scoring**: Daily, Weekly, and Monthly RSI alignment, Trend structure (EMA 20/50/200), True ADX, and Relative Strength vs Nifty 500.
+- 🔗 **Direct TradingView Links**: Click any symbol to immediately open its live NSE chart on TradingView.
+- 📥 **One-Click CSV Export**: Download dated CSV reports of all screened and scored candidates.
+- 💾 **Local Parquet Caching**: Automatically caches daily OHLCV data to disk — subsequent scans run in **< 3 seconds**.
 
 ---
 
@@ -21,10 +33,10 @@ source .venv/bin/activate
 pip install -r requirements.txt
 
 # 3. Run the scanner
-python app.py
+streamlit run streamlit_app.py
 ```
 
-Open your browser at **http://localhost:8502**
+Open your browser at **http://localhost:8501** (or **http://localhost:8502**).
 
 ---
 
@@ -47,7 +59,7 @@ Reduces Nifty 500 → ~10–40 candidates by requiring:
 | 6-month return | > 0 |
 | Distance from 52W high | ≤ 10% |
 
-All thresholds are adjustable via UI sliders.
+All thresholds are adjustable in the **Scanner Controls & Filters** panel.
 
 ### Layer 2 — Composite Scoring
 
@@ -84,15 +96,11 @@ All thresholds are adjustable via UI sliders.
 
 ```
 my-scanner/
-├── app.py                  # FastAPI backend — all indicators, scoring, API
-├── requirements.txt
+├── streamlit_app.py        # Streamlit application — data pipeline, scoring & UI
+├── requirements.txt        # Dependencies (streamlit, yfinance, pandas, numpy, pyarrow)
 ├── cache/                  # Daily Parquet cache (auto-created)
-├── static/
-│   ├── index.html          # UI — sliders + results table
-│   ├── style.css           # Dark glassmorphism theme
-│   └── script.js           # Fetch, render, sort, CSV export
-└── .specify/               # 📚 Project spec kit (see below)
-    ├── spec.md             # Full scoring specification
+└── .specify/               # 📚 Project spec kit
+    ├── spec.md             # Full scoring & UI specification
     ├── plan.md             # Architecture & implementation plan
     ├── tasks.md            # Task history & backlog
     └── constitution.md     # Core design principles
@@ -102,7 +110,7 @@ my-scanner/
 
 ## 📚 Specification Kit (`.specify/`)
 
-The `.specify/` directory is the single source of truth for this project's design and implementation rules. Always consult these before making changes.
+The `.specify/` directory is the single source of truth for this project's design and implementation rules:
 
 | File | Purpose |
 |---|---|
@@ -111,19 +119,16 @@ The `.specify/` directory is the single source of truth for this project's desig
 | [`.specify/tasks.md`](.specify/tasks.md) | Completed task history by phase + future backlog |
 | [`.specify/constitution.md`](.specify/constitution.md) | Non-negotiable design principles (spec-driven scoring, risk-first output, local-first caching) |
 
-> **Rule**: Any change to scoring weights, thresholds, or formula must update `spec.md` first.
-
 ---
 
-## Caching
+## Caching & Performance
 
-On first run each day, the app downloads 3 years of daily OHLCV data for all ~500 stocks via `yfinance` (takes ~60–90 seconds). Results are cached as a `.parquet` file in `cache/`. Subsequent runs that day are **fast** (< 5 seconds).
+On first run each day, the app downloads 3 years of daily OHLCV data for all ~500 stocks via `yfinance` (~60–90 seconds). Results are cached as a `.parquet` file in `cache/`. Subsequent runs on the same day take **< 3 seconds**.
 
 ---
 
 ## Data Notes
 
-- **Constituent list**: Fetched from Nifty Indices / NSE with a GitHub fallback. Verify before live use.
-- **Price data**: Yahoo Finance via `yfinance`. Suitable for research — not exchange-grade real-time.
+- **Constituent list**: Fetched from Nifty Indices / NSE with a GitHub fallback.
+- **Price data**: Yahoo Finance via `yfinance`.
 - **Benchmark**: Relative Strength calculated vs Nifty 500 index (`^CRSLDX`), falling back to Nifty 50 (`^NSEI`).
-- **Higher-timeframe RSI**: Calculated from resampled weekly/monthly bars. A proper backtest must use point-in-time Nifty 500 membership to avoid survivorship bias.
