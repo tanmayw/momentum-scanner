@@ -439,143 +439,333 @@ def score_candidates(df):
 
 
 # ─────────────────────────────────────────────
-#  Streamlit Interface & Styling
+#  Dataframe Styling
 # ─────────────────────────────────────────────
 
 def style_dataframe(df):
     def color_action(val):
         if val == "BUY":
-            return "background-color: rgba(46, 204, 113, 0.15); color: #2ecc71; font-weight: bold;"
+            return "background-color:rgba(0,255,136,0.12);color:#00ff88;font-weight:700;letter-spacing:1px;"
         elif val == "WATCH / PULLBACK":
-            return "background-color: rgba(241, 196, 15, 0.15); color: #f1c40f; font-weight: bold;"
+            return "background-color:rgba(255,184,0,0.12);color:#ffb800;font-weight:700;"
         elif val == "WATCHLIST":
-            return "background-color: rgba(52, 152, 219, 0.15); color: #3498db;"
+            return "background-color:rgba(100,181,246,0.12);color:#64b5f6;font-weight:600;"
         else:
-            return "background-color: rgba(231, 76, 60, 0.15); color: #e74c3c;"
+            return "background-color:rgba(255,82,82,0.12);color:#ff5252;font-weight:600;"
 
     def color_rsi(val):
         if pd.isna(val): return ""
         if val >= 70:
-            return "background-color: rgba(230, 126, 34, 0.2); color: #e67e22; font-weight: bold;"
+            return "background-color:rgba(255,152,0,0.15);color:#ff9800;font-weight:bold;"
         elif val >= 60:
-            return "background-color: rgba(241, 196, 15, 0.15); color: #f1c40f;"
+            return "background-color:rgba(255,235,59,0.08);color:#ffeb3b;"
         return ""
 
     def color_rr(val):
         if pd.isna(val): return ""
         if val >= 2.0:
-            return "background-color: rgba(46, 204, 113, 0.15); color: #2ecc71; font-weight: bold;"
+            return "background-color:rgba(0,255,136,0.12);color:#00ff88;font-weight:bold;"
         elif val >= 1.5:
-            return "background-color: rgba(241, 196, 15, 0.15); color: #f1c40f;"
+            return "background-color:rgba(255,184,0,0.1);color:#ffb800;"
         return ""
 
     def color_return(val):
         if pd.isna(val): return ""
-        return "color: #2ecc71;" if val >= 0 else "color: #e74c3c;"
+        return "color:#00ff88;font-weight:600;" if val >= 0 else "color:#ff5252;font-weight:600;"
 
-    styled = df.style.map(color_action, subset=["Action"]) \
-                     .map(color_rsi, subset=["Monthly RSI", "Weekly RSI", "Daily RSI"]) \
-                     .map(color_rr, subset=["RR Ratio"]) \
-                     .map(color_return, subset=["3M Return", "6M Return", "RS vs Nifty"])
-    
+    def color_score(val):
+        if pd.isna(val): return ""
+        if val >= 85:   return "color:#00ff88;font-weight:700;"
+        elif val >= 75: return "color:#ffb800;font-weight:600;"
+        elif val >= 65: return "color:#64b5f6;"
+        return "color:#9e9e9e;"
+
+    styled = df.style \
+        .map(color_action, subset=["Action"]) \
+        .map(color_rsi, subset=["Monthly RSI", "Weekly RSI", "Daily RSI"]) \
+        .map(color_rr, subset=["RR Ratio"]) \
+        .map(color_return, subset=["3M Return", "6M Return", "RS vs Nifty"]) \
+        .map(color_score, subset=["Final Score"])
+
     styled = styled.format({
-        "Price": "₹{:.2f}",
-        "Stop Loss": "₹{:.2f}",
-        "Target 2%": "₹{:.2f}",
-        "Target 5%": "₹{:.2f}",
-        "Final Score": "{:.1f}",
+        "Price":          "\u20b9{:.2f}",
+        "Stop Loss":      "\u20b9{:.2f}",
+        "Target 2%":      "\u20b9{:.2f}",
+        "Target 5%":      "\u20b9{:.2f}",
+        "Final Score":    "{:.1f}",
         "Momentum Score": "{:.1f}",
-        "Entry Score": "{:.1f}",
-        "Monthly RSI": "{:.1f}",
-        "Weekly RSI": "{:.1f}",
-        "Daily RSI": "{:.1f}",
-        "ADX": "{:.1f}",
-        "Vol Ratio": "{:.2f}",
-        "RR Ratio": "{:.2f}",
-        "Risk %": "{:.2f}%",
-        "3M Return": "{:.2f}%",
-        "6M Return": "{:.2f}%",
-        "RS vs Nifty": "{:.2f}%",
-        "52W Distance": "{:.2f}%"
+        "Entry Score":    "{:.1f}",
+        "Monthly RSI":    "{:.1f}",
+        "Weekly RSI":     "{:.1f}",
+        "Daily RSI":      "{:.1f}",
+        "ADX":            "{:.1f}",
+        "Vol Ratio":      "{:.2f}x",
+        "RR Ratio":       "{:.2f}:1",
+        "Risk %":         "{:.2f}%",
+        "3M Return":      "{:+.2f}%",
+        "6M Return":      "{:+.2f}%",
+        "RS vs Nifty":    "{:+.2f}%",
+        "52W Distance":   "{:.2f}%",
     })
     return styled
 
+
+# ─────────────────────────────────────────────
+#  Page Config
+# ─────────────────────────────────────────────
+
 st.set_page_config(
     page_title="Nifty 500 Momentum Scanner",
-    page_icon="📈",
+    page_icon="\U0001f4c8",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom header styling
+# ─────────────────────────────────────────────
+#  Global CSS — Dark Trading Terminal
+# ─────────────────────────────────────────────
+
 st.markdown("""
-    <style>
-    .main-title {
-        font-family: 'Inter', sans-serif;
-        font-weight: 700;
-        margin-bottom: 0px;
-    }
-    .sub-title {
-        font-family: 'Inter', sans-serif;
-        color: #a0aec0;
-        margin-top: 0px;
-        margin-bottom: 25px;
-    }
-    </style>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap');
+
+:root {
+    --bg-card: #0f1923;
+    --border:  rgba(255,255,255,0.06);
+    --green:   #00ff88;
+    --amber:   #ffb800;
+    --blue:    #64b5f6;
+    --red:     #ff5252;
+    --purple:  #bb86fc;
+    --txt:     #dde3ee;
+    --txt2:    #8892a4;
+    --txt3:    #3d4f65;
+}
+html, body, [class*="css"] { font-family: 'Inter', sans-serif !important; color: var(--txt) !important; }
+.stApp { background: linear-gradient(160deg,#050b14 0%,#080f1d 60%,#050b14 100%) !important; }
+#MainMenu, footer, header { visibility: hidden; }
+.block-container { padding-top: 1.2rem !important; }
+
+.hero {
+    background: linear-gradient(135deg,rgba(0,255,136,0.04),rgba(100,181,246,0.04),rgba(187,134,252,0.04));
+    border: 1px solid rgba(0,255,136,0.18); border-radius: 20px;
+    padding: 2.5rem 3rem; margin-bottom: 2rem; position: relative; overflow: hidden;
+}
+.hero::before {
+    content:''; position:absolute; inset:0;
+    background: radial-gradient(ellipse at 20% 50%,rgba(0,255,136,0.04) 0%,transparent 55%),
+                radial-gradient(ellipse at 80% 50%,rgba(100,181,246,0.04) 0%,transparent 55%);
+    pointer-events:none;
+}
+.hero-badge {
+    display:inline-flex; align-items:center; gap:7px;
+    background:rgba(0,255,136,0.08); border:1px solid rgba(0,255,136,0.28);
+    border-radius:40px; padding:4px 14px;
+    font-size:0.68rem; font-weight:600; color:var(--green);
+    letter-spacing:1.5px; text-transform:uppercase; margin-bottom:1rem;
+}
+.pulse { width:7px; height:7px; border-radius:50%; background:var(--green);
+    animation:blink 2s ease-in-out infinite; }
+@keyframes blink { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.3;transform:scale(.65)} }
+.hero-title {
+    font-size:2.9rem; font-weight:900; line-height:1.05;
+    letter-spacing:-1.5px; margin-bottom:.7rem;
+    background:linear-gradient(130deg,#fff 0%,#a8c8ff 45%,#00ff88 100%);
+    -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
+}
+.hero-sub { font-size:1rem; color:var(--txt2); line-height:1.5; }
+.hero-meta { display:flex; gap:2.5rem; margin-top:1.6rem; flex-wrap:wrap; }
+.hm-label { font-size:.62rem; color:var(--txt3); text-transform:uppercase; letter-spacing:1.2px; margin-bottom:2px; font-weight:600; }
+.hm-val   { font-size:.9rem; color:var(--txt); font-weight:600; font-family:'JetBrains Mono',monospace; }
+
+.kpi-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(145px,1fr)); gap:1rem; margin-bottom:2rem; }
+.kpi { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:1.1rem 1.3rem; position:relative; overflow:hidden; }
+.kpi::before { content:''; position:absolute; top:0; left:0; width:100%; height:2.5px; border-radius:14px 14px 0 0; }
+.kpi.g::before { background:linear-gradient(90deg,var(--green),transparent); }
+.kpi.a::before { background:linear-gradient(90deg,var(--amber),transparent); }
+.kpi.b::before { background:linear-gradient(90deg,var(--blue),transparent); }
+.kpi.p::before { background:linear-gradient(90deg,var(--purple),transparent); }
+.kpi-ico { font-size:1.4rem; margin-bottom:.3rem; }
+.kpi-val { font-size:1.8rem; font-weight:800; line-height:1; font-family:'JetBrains Mono',monospace; margin-bottom:.15rem; }
+.kpi-lbl { font-size:.68rem; color:var(--txt2); text-transform:uppercase; letter-spacing:.8px; font-weight:500; }
+.kpi.g .kpi-val { color:var(--green); } .kpi.a .kpi-val { color:var(--amber); }
+.kpi.b .kpi-val { color:var(--blue);  } .kpi.p .kpi-val { color:var(--purple); }
+
+[data-testid="stSidebar"] {
+    background:linear-gradient(180deg,#091422 0%,#060e18 100%) !important;
+    border-right:1px solid rgba(255,255,255,0.04) !important;
+}
+.sb-head { background:linear-gradient(135deg,rgba(0,255,136,.07),rgba(100,181,246,.07));
+    border:1px solid rgba(0,255,136,.2); border-radius:12px; padding:1rem 1.2rem;
+    margin-bottom:1.5rem; text-align:center; }
+.sb-title { font-size:.95rem; font-weight:700; color:var(--green); }
+.sb-sub   { font-size:.7rem; color:var(--txt2); margin-top:2px; }
+.flbl { font-size:.65rem; font-weight:600; color:var(--txt3); text-transform:uppercase;
+    letter-spacing:1.2px; margin:1rem 0 .4rem; }
+
+.stButton > button {
+    background:linear-gradient(135deg,#00bb5a,#00ff88) !important;
+    color:#040c12 !important; font-weight:800 !important; font-size:.95rem !important;
+    border:none !important; border-radius:12px !important; padding:.72rem !important;
+    box-shadow:0 4px 22px rgba(0,255,136,.28) !important; transition:all .25s ease !important;
+}
+.stButton > button:hover { transform:translateY(-2px) scale(1.01) !important; box-shadow:0 8px 32px rgba(0,255,136,.42) !important; }
+
+.stDownloadButton > button {
+    background:rgba(100,181,246,.07) !important; color:var(--blue) !important;
+    border:1px solid rgba(100,181,246,.28) !important; border-radius:10px !important;
+    font-weight:600 !important; transition:all .2s !important;
+}
+.stDownloadButton > button:hover { background:rgba(100,181,246,.14) !important; }
+
+.stProgress > div > div { background:linear-gradient(90deg,#00ff88,#00b4ff) !important; border-radius:40px !important; }
+
+[data-testid="stDataFrame"] { border:1px solid var(--border) !important; border-radius:14px !important; overflow:hidden !important; }
+[data-testid="stDataFrame"] thead th {
+    background:rgba(0,255,136,.05) !important; color:#00ff88 !important;
+    font-size:.65rem !important; font-weight:700 !important; text-transform:uppercase !important;
+    letter-spacing:.9px !important; border-bottom:1px solid rgba(0,255,136,.12) !important;
+}
+[data-testid="stDataFrame"] tbody td { font-family:'JetBrains Mono',monospace !important; font-size:.78rem !important; border-bottom:1px solid rgba(255,255,255,.025) !important; }
+
+.rbanner {
+    background:linear-gradient(135deg,rgba(0,255,136,.06),rgba(100,181,246,.06));
+    border:1px solid rgba(0,255,136,.2); border-radius:14px;
+    padding:1rem 1.5rem; margin-bottom:1.4rem;
+    display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem;
+}
+.rb-count { font-size:1.35rem; font-weight:800; color:var(--green); font-family:'JetBrains Mono',monospace; }
+.rb-label { font-size:.75rem; color:var(--txt2); margin-top:2px; }
+.rb-meta  { font-size:.7rem; color:var(--txt3); font-family:'JetBrains Mono',monospace; }
+
+.legend { display:flex; gap:2rem; flex-wrap:wrap; align-items:center;
+    padding:.85rem 1.4rem; background:rgba(255,255,255,.02);
+    border:1px solid rgba(255,255,255,.05); border-radius:12px; margin-top:1.2rem; }
+.leg-item { display:flex; align-items:center; gap:7px; }
+.leg-dot  { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+.leg-txt  { font-size:.72rem; color:var(--txt2); }
+.leg-tip  { margin-left:auto; font-size:.68rem; color:var(--txt3); font-style:italic; }
+
+.idle { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:5rem 2rem; text-align:center; }
+.idle-ico { font-size:5rem; margin-bottom:1.5rem; animation:float 3s ease-in-out infinite; }
+@keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-14px)} }
+.idle-h { font-size:1.75rem; font-weight:700; color:var(--txt); margin-bottom:.6rem; }
+.idle-p { font-size:.95rem; color:var(--txt2); max-width:430px; line-height:1.7; }
+.idle-steps { display:flex; gap:1.2rem; margin-top:2.5rem; flex-wrap:wrap; justify-content:center; }
+.step { background:var(--bg-card); border:1px solid var(--border); border-radius:13px;
+    padding:1rem 1.2rem; width:148px; text-align:left; transition:border-color .25s; }
+.step:hover { border-color:rgba(0,255,136,.3); }
+.step-n { font-size:1.3rem; font-weight:800; color:var(--green); font-family:'JetBrains Mono',monospace; margin-bottom:.3rem; }
+.step-t { font-size:.78rem; font-weight:600; color:var(--txt); margin-bottom:.15rem; }
+.step-d { font-size:.68rem; color:var(--txt3); line-height:1.4; }
+[data-testid="stSlider"] label { font-size:.76rem !important; color:var(--txt2) !important; }
+</style>
 """, unsafe_allow_html=True)
 
-st.markdown("<h1 class='main-title'>📈 Nifty 500 Momentum Scanner</h1>", unsafe_allow_html=True)
-st.markdown("<p class='sub-title'>Multi-Timeframe Momentum Analysis & Entry Quality Scoring</p>", unsafe_allow_html=True)
 
-# Sidebar configurations
-st.sidebar.header("Scanner Controls")
+# ─────────────────────────────────────────────
+#  Hero Header
+# ─────────────────────────────────────────────
 
-min_m = st.sidebar.slider("Monthly RSI Minimum", min_value=50, max_value=75, value=60)
-min_w = st.sidebar.slider("Weekly RSI Minimum", min_value=50, max_value=75, value=60)
-min_d = st.sidebar.slider("Daily RSI Minimum", min_value=40, max_value=70, value=50)
-min_adx = st.sidebar.slider("ADX Minimum", min_value=10, max_value=40, value=20)
-max_52w = st.sidebar.slider("Max distance from 52W high %", min_value=5, max_value=25, value=10)
-top_n = st.sidebar.slider("Rows to display", min_value=5, max_value=50, value=20)
+now_str = datetime.now().strftime("%d %b %Y, %H:%M IST")
 
-run_button = st.sidebar.button("🚀 Run Scanner", use_container_width=True)
+st.markdown(f"""
+<div class="hero">
+    <div class="hero-badge"><span class="pulse"></span>Live Scanner &bull; Nifty 500</div>
+    <div class="hero-title">Momentum Scanner</div>
+    <div class="hero-sub">Multi-Timeframe RSI &nbsp;&middot;&nbsp; EMA Trend Alignment &nbsp;&middot;&nbsp; ADX Strength &nbsp;&middot;&nbsp; Relative Power vs Nifty &nbsp;&middot;&nbsp; Entry Quality Score</div>
+    <div class="hero-meta">
+        <div><div class="hm-label">Universe</div><div class="hm-val">Nifty 500</div></div>
+        <div><div class="hm-label">Timeframes</div><div class="hm-val">D &bull; W &bull; M</div></div>
+        <div><div class="hm-label">Benchmark</div><div class="hm-val">^CRSLDX</div></div>
+        <div><div class="hm-label">As of</div><div class="hm-val">{now_str}</div></div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+
+# ─────────────────────────────────────────────
+#  Sidebar Controls
+# ─────────────────────────────────────────────
+
+with st.sidebar:
+    st.markdown("""
+    <div class="sb-head">
+        <div class="sb-title">&#9881;&#65039; Scanner Controls</div>
+        <div class="sb-sub">Tune filters &amp; thresholds</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown('<div class="flbl">&#128202; RSI Thresholds</div>', unsafe_allow_html=True)
+    min_m   = st.slider("Monthly RSI >=", min_value=50, max_value=75, value=60)
+    min_w   = st.slider("Weekly RSI >=",  min_value=50, max_value=75, value=60)
+    min_d   = st.slider("Daily RSI >=",   min_value=40, max_value=70, value=50)
+
+    st.markdown("<hr style='border-color:rgba(255,255,255,0.05);margin:0.8rem 0'>", unsafe_allow_html=True)
+    st.markdown('<div class="flbl">&#128200; Trend &amp; Proximity</div>', unsafe_allow_html=True)
+    min_adx = st.slider("ADX Minimum",       min_value=10, max_value=40, value=20)
+    max_52w = st.slider("Max 52W Distance %", min_value=5,  max_value=25, value=10)
+
+    st.markdown("<hr style='border-color:rgba(255,255,255,0.05);margin:0.8rem 0'>", unsafe_allow_html=True)
+    st.markdown('<div class="flbl">&#127919; Display</div>', unsafe_allow_html=True)
+    top_n   = st.slider("Top Results",        min_value=5,  max_value=50, value=20)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    run_button = st.button("\U0001f680 Run Full Scan", use_container_width=True)
+
+    st.markdown("""
+    <div style="margin-top:1.5rem;padding:.85rem 1rem;background:rgba(255,255,255,.02);
+         border:1px solid rgba(255,255,255,.05);border-radius:10px;">
+        <div style="font-size:.6rem;color:#3d4f65;text-transform:uppercase;letter-spacing:1px;margin-bottom:.5rem;">Scoring Model</div>
+        <div style="font-size:.72rem;color:#8892a4;line-height:1.9;">
+            &#128208; Momentum Score (60%)<br>
+            &#127919; Entry Score (40%)<br>
+            &#128737;&#65039; R:R Filter &ge; 1.5
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+# ─────────────────────────────────────────────
+#  Main Content
+# ─────────────────────────────────────────────
 
 if run_button:
-    status_box = st.empty()
-    
+    status_box     = st.empty()
+    prog_container = st.empty()
+
     with status_box.container():
-        st.info("Step 1/4: Fetching Nifty 500 symbols list...")
-    
+        st.info("**Step 1/4** — Fetching Nifty 500 constituent symbols...")
     try:
         symbols, source = get_nifty500_symbols()
     except Exception as e:
         status_box.error(f"Error fetching symbols: {e}")
         st.stop()
-        
+
     with status_box.container():
-        st.info(f"Step 2/4: Loading historical data for {len(symbols)} tickers (Yahoo Finance/Cache)...")
-        
+        st.info(f"**Step 2/4** — Loading 3-year history for **{len(symbols)}** tickers...")
     try:
         data_map = download_prices(symbols)
     except Exception as e:
         status_box.error(f"Error downloading prices: {e}")
         st.stop()
-        
+
     with status_box.container():
-        st.info("Step 3/4: Fetching index benchmark...")
-        
+        st.info("**Step 3/4** — Fetching benchmark (Nifty 500 / Nifty 50)...")
     try:
         benchmark = get_benchmark()
     except Exception as e:
         status_box.error(f"Error fetching benchmark: {e}")
         st.stop()
-        
+
     with status_box.container():
-        st.info("Step 4/4: Calculating indicators and scoring...")
-        
+        st.info("**Step 4/4** — Computing indicators & scoring all stocks...")
+
     rows = []
-    progress_bar = st.progress(0.0)
+    with prog_container:
+        progress_bar = st.progress(0.0, text="Scanning universe...")
     total_symbols = len(data_map)
-    
+
     for idx, (sym, d) in enumerate(data_map.items()):
         try:
             row = calculate_metrics(sym, d, benchmark)
@@ -583,16 +773,16 @@ if run_button:
                 rows.append(row)
         except Exception:
             continue
-        progress_bar.progress((idx + 1) / total_symbols)
-        
-    progress_bar.empty()
+        pct = (idx + 1) / total_symbols
+        progress_bar.progress(pct, text=f"Scanning {sym}... ({idx+1}/{total_symbols})")
+
+    prog_container.empty()
     status_box.empty()
-    
+
     raw = pd.DataFrame(rows)
     if raw.empty:
         st.error("No valid stock data could be calculated.")
     else:
-        # Apply Layer 1 hard filters
         eligible = raw[
             (raw["Monthly RSI"] >= min_m) &
             (raw["Weekly RSI"]  >= min_w) &
@@ -601,18 +791,40 @@ if run_button:
             (raw["52W Distance"] <= max_52w / 100) &
             (raw["Hard Filter"])
         ].copy()
-        
+
         if eligible.empty:
-            st.warning("No stocks passed the initial filter criteria.")
+            st.warning("No stocks passed the filter criteria. Try loosening the thresholds.")
         else:
-            # Score
             scored = score_candidates(eligible)
-            
             if scored.empty:
                 st.warning("No stocks passed the Risk/Reward threshold (R:R >= 1.5).")
             else:
                 scored.insert(0, "Rank", range(1, len(scored) + 1))
-                
+
+                n_buy       = int((scored["Action"] == "BUY").sum())
+                n_watch     = int((scored["Action"] == "WATCH / PULLBACK").sum())
+                n_watchlist = int((scored["Action"] == "WATCHLIST").sum())
+                top_score   = float(scored["Final Score"].max())
+                avg_rr      = float(scored["RR Ratio"].mean())
+                total_q     = len(scored)
+
+                st.markdown(f"""
+                <div class="kpi-grid">
+                    <div class="kpi g"><div class="kpi-ico">&#9989;</div>
+                        <div class="kpi-val">{n_buy}</div><div class="kpi-lbl">BUY Signals</div></div>
+                    <div class="kpi a"><div class="kpi-ico">&#128064;</div>
+                        <div class="kpi-val">{n_watch}</div><div class="kpi-lbl">Watch / Pullback</div></div>
+                    <div class="kpi b"><div class="kpi-ico">&#128203;</div>
+                        <div class="kpi-val">{n_watchlist}</div><div class="kpi-lbl">Watchlist</div></div>
+                    <div class="kpi p"><div class="kpi-ico">&#127942;</div>
+                        <div class="kpi-val">{top_score:.0f}</div><div class="kpi-lbl">Top Score</div></div>
+                    <div class="kpi a"><div class="kpi-ico">&#9878;&#65039;</div>
+                        <div class="kpi-val">{avg_rr:.1f}:1</div><div class="kpi-lbl">Avg R:R</div></div>
+                    <div class="kpi g"><div class="kpi-ico">&#128269;</div>
+                        <div class="kpi-val">{total_q}</div><div class="kpi-lbl">Total Qualified</div></div>
+                </div>
+                """, unsafe_allow_html=True)
+
                 display_cols = [
                     "Rank", "Symbol", "Action", "Price",
                     "Final Score", "Momentum Score", "Entry Score",
@@ -621,44 +833,89 @@ if run_button:
                     "3M Return", "6M Return", "RS vs Nifty", "52W Distance",
                     "Stop Loss", "Target 2%", "Target 5%",
                 ]
-                
                 view = scored[display_cols].head(top_n).copy()
-                
-                # Convert ratios to percentages for display columns
                 for c in ["3M Return", "6M Return", "RS vs Nifty", "52W Distance"]:
                     view[c] = (view[c] * 100).round(2)
-                
-                st.success(f"Scan complete! Found {len(view)} results.")
-                
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    st.markdown(f"**Source**: {source} | **Benchmark**: Relative strength compared vs Nifty 500 index")
-                with col2:
-                    csv = view.to_csv(index=False).encode('utf-8')
+
+                st.markdown(f"""
+                <div class="rbanner">
+                    <div>
+                        <div class="rb-count">{len(view)} Results</div>
+                        <div class="rb-label">Ranked by Final Score &bull; {datetime.now().strftime('%d %b %Y, %H:%M')}</div>
+                    </div>
+                    <div class="rb-meta">Source: {source} &nbsp;|&nbsp; Benchmark: Nifty 500</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                _, col_dl = st.columns([6, 1])
+                with col_dl:
+                    csv = view.to_csv(index=False).encode("utf-8")
                     st.download_button(
-                        label="⬇ Export CSV",
+                        label="Export CSV",
                         data=csv,
                         file_name=f"nifty500_scan_{datetime.now().strftime('%Y-%m-%d')}.csv",
                         mime="text/csv",
                         use_container_width=True
                     )
-                
-                # Replace Symbol with TradingView link format
-                view["Symbol"] = view["Symbol"].apply(lambda s: f"https://in.tradingview.com/chart/?symbol=NSE:{s}")
-                
+
+                view["Symbol"] = view["Symbol"].apply(
+                    lambda s: f"https://in.tradingview.com/chart/?symbol=NSE:{s}"
+                )
                 styled_view = style_dataframe(view)
-                
                 st.dataframe(
                     styled_view,
                     column_config={
                         "Symbol": st.column_config.LinkColumn(
                             "Symbol",
-                            help="Click to view charts on TradingView",
+                            help="Click to open chart on TradingView",
                             display_text=r"https://in\.tradingview\.com/chart/\?symbol=NSE:(.*)"
                         )
                     },
                     use_container_width=True,
                     hide_index=True
                 )
+
+                st.markdown("""
+                <div class="legend">
+                    <div class="leg-item"><span class="leg-dot" style="background:#00ff88"></span>
+                        <span class="leg-txt">BUY &mdash; Score &ge; 85</span></div>
+                    <div class="leg-item"><span class="leg-dot" style="background:#ffb800"></span>
+                        <span class="leg-txt">WATCH / PULLBACK &mdash; Score &ge; 75</span></div>
+                    <div class="leg-item"><span class="leg-dot" style="background:#64b5f6"></span>
+                        <span class="leg-txt">WATCHLIST &mdash; Score &ge; 65</span></div>
+                    <div class="leg-item"><span class="leg-dot" style="background:#ff5252"></span>
+                        <span class="leg-txt">AVOID &mdash; Score &lt; 65</span></div>
+                    <div class="leg-tip">Click any symbol to open TradingView chart &rarr;</div>
+                </div>
+                """, unsafe_allow_html=True)
+
 else:
-    st.info("Click '🚀 Run Scanner' in the sidebar to start scanning the Nifty 500 index.")
+    st.markdown("""
+    <div class="idle">
+        <div class="idle-ico">&#128200;</div>
+        <div class="idle-h">Ready to Scan the Market</div>
+        <div class="idle-p">
+            Configure your filters in the sidebar, then click
+            <strong style="color:#00ff88;">Run Full Scan</strong>
+            to identify momentum breakout candidates across the entire Nifty 500 universe.
+        </div>
+        <div class="idle-steps">
+            <div class="step">
+                <div class="step-n">01</div><div class="step-t">Set Filters</div>
+                <div class="step-d">Tune RSI, ADX &amp; 52W distance thresholds</div>
+            </div>
+            <div class="step">
+                <div class="step-n">02</div><div class="step-t">Run Scan</div>
+                <div class="step-d">All 500 stocks analysed in real-time</div>
+            </div>
+            <div class="step">
+                <div class="step-n">03</div><div class="step-t">Review Signals</div>
+                <div class="step-d">BUY &bull; WATCH &bull; AVOID action ratings</div>
+            </div>
+            <div class="step">
+                <div class="step-n">04</div><div class="step-t">Open Charts</div>
+                <div class="step-d">One-click TradingView deep links</div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
