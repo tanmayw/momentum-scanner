@@ -799,7 +799,7 @@ st.markdown(f"""
     <div class="hero-meta">
         <div><div class="hm-label">Universe</div><div class="hm-val">Nifty 500</div></div>
         <div><div class="hm-label">Timeframes</div><div class="hm-val">D &bull; W &bull; M</div></div>
-        <div><div class="hm-label">Benchmark</div><div class="hm-val">^CRSLDX</div></div>
+        <div><div class="hm-label">Benchmark</div><div class="hm-val">Nifty 500</div></div>
         <div><div class="hm-label">As of</div><div class="hm-val">{now_str}</div></div>
     </div>
 </div>
