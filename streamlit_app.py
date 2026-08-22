@@ -442,43 +442,67 @@ def score_candidates(df):
 #  Dataframe Styling
 # ─────────────────────────────────────────────
 
-def style_dataframe(df):
+def style_dataframe(df, theme="dark"):
+    is_light = (theme == "light")
+    
+    # Action badge colors
+    c_buy_bg    = "rgba(22, 163, 74, 0.12)" if is_light else "rgba(0, 255, 136, 0.12)"
+    c_buy_txt   = "#15803d" if is_light else "#00ff88"
+    
+    c_watch_bg  = "rgba(217, 119, 6, 0.12)" if is_light else "rgba(255, 184, 0, 0.12)"
+    c_watch_txt = "#b45309" if is_light else "#ffb800"
+    
+    c_list_bg   = "rgba(37, 99, 235, 0.10)" if is_light else "rgba(100, 181, 246, 0.12)"
+    c_list_txt  = "#1d4ed8" if is_light else "#64b5f6"
+    
+    c_avoid_bg  = "rgba(220, 38, 38, 0.10)" if is_light else "rgba(255, 82, 82, 0.12)"
+    c_avoid_txt = "#b91c1c" if is_light else "#ff5252"
+    
+    c_pos_txt   = "#15803d" if is_light else "#00ff88"
+    c_neg_txt   = "#b91c1c" if is_light else "#ff5252"
+    
+    c_rsi_hot_bg  = "rgba(217, 119, 6, 0.12)" if is_light else "rgba(255, 152, 0, 0.15)"
+    c_rsi_hot_txt = "#b45309" if is_light else "#ff9800"
+    
+    c_rsi_warm_bg  = "rgba(234, 179, 8, 0.15)" if is_light else "rgba(255, 235, 59, 0.08)"
+    c_rsi_warm_txt = "#854d0e" if is_light else "#ffeb3b"
+
     def color_action(val):
         if val == "BUY":
-            return "background-color:rgba(0,255,136,0.12);color:#00ff88;font-weight:700;letter-spacing:1px;"
+            return f"background-color:{c_buy_bg};color:{c_buy_txt};font-weight:700;letter-spacing:0.5px;"
         elif val == "WATCH / PULLBACK":
-            return "background-color:rgba(255,184,0,0.12);color:#ffb800;font-weight:700;"
+            return f"background-color:{c_watch_bg};color:{c_watch_txt};font-weight:700;"
         elif val == "WATCHLIST":
-            return "background-color:rgba(100,181,246,0.12);color:#64b5f6;font-weight:600;"
+            return f"background-color:{c_list_bg};color:{c_list_txt};font-weight:600;"
         else:
-            return "background-color:rgba(255,82,82,0.12);color:#ff5252;font-weight:600;"
+            return f"background-color:{c_avoid_bg};color:{c_avoid_txt};font-weight:600;"
 
     def color_rsi(val):
         if pd.isna(val): return ""
         if val >= 70:
-            return "background-color:rgba(255,152,0,0.15);color:#ff9800;font-weight:bold;"
+            return f"background-color:{c_rsi_hot_bg};color:{c_rsi_hot_txt};font-weight:bold;"
         elif val >= 60:
-            return "background-color:rgba(255,235,59,0.08);color:#ffeb3b;"
+            return f"background-color:{c_rsi_warm_bg};color:{c_rsi_warm_txt};font-weight:600;"
         return ""
 
     def color_rr(val):
         if pd.isna(val): return ""
         if val >= 2.0:
-            return "background-color:rgba(0,255,136,0.12);color:#00ff88;font-weight:bold;"
+            return f"background-color:{c_buy_bg};color:{c_buy_txt};font-weight:bold;"
         elif val >= 1.5:
-            return "background-color:rgba(255,184,0,0.1);color:#ffb800;"
+            return f"background-color:{c_watch_bg};color:{c_watch_txt};font-weight:600;"
         return ""
 
     def color_return(val):
         if pd.isna(val): return ""
-        return "color:#00ff88;font-weight:600;" if val >= 0 else "color:#ff5252;font-weight:600;"
+        return f"color:{c_pos_txt};font-weight:600;" if val >= 0 else f"color:{c_neg_txt};font-weight:600;"
 
     def color_score(val):
         if pd.isna(val): return ""
-        if val >= 85:   return "color:#00ff88;font-weight:700;"
-        elif val >= 75: return "color:#ffb800;font-weight:600;"
-        elif val >= 65: return "color:#64b5f6;"
-        return "color:#9e9e9e;"
+        if val >= 85:   return f"color:{c_buy_txt};font-weight:700;"
+        elif val >= 75: return f"color:{c_watch_txt};font-weight:600;"
+        elif val >= 65: return f"color:{c_list_txt};font-weight:600;"
+        return "color:#64748b;" if is_light else "color:#9e9e9e;"
 
     styled = df.style \
         .map(color_action, subset=["Action"]) \
@@ -529,64 +553,78 @@ if "theme" not in st.session_state:
     st.session_state.theme = "dark"
 
 DARK = {
-    "app_bg":       "linear-gradient(160deg,#050b14 0%,#080f1d 60%,#050b14 100%)",
-    "bg_card":      "#0f1923",
-    "border":       "rgba(255,255,255,0.06)",
-    "border_hero":  "rgba(0,255,136,0.18)",
-    "hero_bg":      "linear-gradient(135deg,rgba(0,255,136,0.04),rgba(100,181,246,0.04),rgba(187,134,252,0.04))",
-    "title_grad":   "linear-gradient(130deg,#fff 0%,#a8c8ff 45%,#00ff88 100%)",
-    "green":        "#00ff88",
-    "amber":        "#ffb800",
-    "blue":         "#64b5f6",
-    "red":          "#ff5252",
-    "purple":       "#bb86fc",
-    "txt":          "#dde3ee",
-    "txt2":         "#8892a4",
-    "txt3":         "#3d4f65",
-    "ctrl_bg":      "linear-gradient(135deg,rgba(0,255,136,0.04),rgba(100,181,246,0.04))",
-    "ctrl_border":  "rgba(0,255,136,0.18)",
-    "legend_bg":    "rgba(255,255,255,0.02)",
-    "legend_border":"rgba(255,255,255,0.05)",
-    "rbanner_bg":   "linear-gradient(135deg,rgba(0,255,136,0.06),rgba(100,181,246,0.06))",
-    "df_row_border":"rgba(255,255,255,0.025)",
-    "th_bg":        "rgba(0,255,136,0.05)",
-    "th_color":     "#00ff88",
-    "th_border":    "rgba(0,255,136,0.12)",
-    "toggle_bg":    "rgba(255,255,255,0.08)",
-    "toggle_bdr":   "rgba(255,255,255,0.15)",
-    "toggle_txt":   "#dde3ee",
-    "toggle_icon":  "☀️",
-    "toggle_label": "Light Mode",
+    "app_bg":            "linear-gradient(160deg,#050b14 0%,#080f1d 60%,#050b14 100%)",
+    "bg_card":           "#0f1923",
+    "border":            "rgba(255,255,255,0.06)",
+    "border_hero":       "rgba(0,255,136,0.18)",
+    "hero_bg":           "linear-gradient(135deg,rgba(0,255,136,0.04),rgba(100,181,246,0.04),rgba(187,134,252,0.04))",
+    "title_grad":        "linear-gradient(130deg,#fff 0%,#a8c8ff 45%,#00ff88 100%)",
+    "green":             "#00ff88",
+    "amber":             "#ffb800",
+    "blue":              "#64b5f6",
+    "red":               "#ff5252",
+    "purple":            "#bb86fc",
+    "txt":               "#dde3ee",
+    "txt2":              "#8892a4",
+    "txt3":              "#3d4f65",
+    "ctrl_bg":           "linear-gradient(135deg,rgba(0,255,136,0.04),rgba(100,181,246,0.04))",
+    "ctrl_border":       "rgba(0,255,136,0.18)",
+    "legend_bg":         "rgba(255,255,255,0.02)",
+    "legend_border":     "rgba(255,255,255,0.05)",
+    "rbanner_bg":        "linear-gradient(135deg,rgba(0,255,136,0.06),rgba(100,181,246,0.06))",
+    "df_row_border":     "rgba(255,255,255,0.025)",
+    "th_bg":             "rgba(0,255,136,0.05)",
+    "th_color":          "#00ff88",
+    "th_border":         "rgba(0,255,136,0.12)",
+    "toggle_bg":         "rgba(255,255,255,0.08)",
+    "toggle_bdr":        "rgba(255,255,255,0.15)",
+    "toggle_txt":        "#dde3ee",
+    "toggle_icon":       "☀️",
+    "toggle_label":      "Light Mode",
+    "btn_bg":            "linear-gradient(135deg,#00bb5a,#00ff88)",
+    "btn_txt":           "#040c12",
+    "step_num_color":    "#00ff88",
+    "step_hover_border": "rgba(0,255,136,0.3)",
+    "hero_badge_bg":     "rgba(0,255,136,0.08)",
+    "hero_badge_bdr":    "rgba(0,255,136,0.28)",
+    "hero_badge_txt":    "#00ff88",
 }
 LIGHT = {
-    "app_bg":       "linear-gradient(160deg,#f0f4f8 0%,#e8eef5 60%,#f0f4f8 100%)",
-    "bg_card":      "#ffffff",
-    "border":       "rgba(0,0,0,0.08)",
-    "border_hero":  "rgba(0,168,90,0.25)",
-    "hero_bg":      "linear-gradient(135deg,rgba(0,200,100,0.06),rgba(59,130,246,0.06),rgba(139,92,246,0.05))",
-    "title_grad":   "linear-gradient(130deg,#0f172a 0%,#1e40af 45%,#059669 100%)",
-    "green":        "#059669",
-    "amber":        "#d97706",
-    "blue":         "#2563eb",
-    "red":          "#dc2626",
-    "purple":       "#7c3aed",
-    "txt":          "#1e293b",
-    "txt2":         "#475569",
-    "txt3":         "#94a3b8",
-    "ctrl_bg":      "linear-gradient(135deg,rgba(0,200,100,0.05),rgba(59,130,246,0.05))",
-    "ctrl_border":  "rgba(0,168,90,0.22)",
-    "legend_bg":    "rgba(0,0,0,0.02)",
-    "legend_border":"rgba(0,0,0,0.07)",
-    "rbanner_bg":   "linear-gradient(135deg,rgba(0,200,100,0.07),rgba(59,130,246,0.07))",
-    "df_row_border":"rgba(0,0,0,0.04)",
-    "th_bg":        "rgba(5,150,105,0.06)",
-    "th_color":     "#059669",
-    "th_border":    "rgba(5,150,105,0.15)",
-    "toggle_bg":    "rgba(0,0,0,0.06)",
-    "toggle_bdr":   "rgba(0,0,0,0.12)",
-    "toggle_txt":   "#1e293b",
-    "toggle_icon":  "🌙",
-    "toggle_label": "Dark Mode",
+    "app_bg":            "linear-gradient(160deg,#f8fafc 0%,#f1f5f9 60%,#e2e8f0 100%)",
+    "bg_card":           "#ffffff",
+    "border":            "rgba(0,0,0,0.08)",
+    "border_hero":       "rgba(0,0,0,0.08)",
+    "hero_bg":           "linear-gradient(135deg,#ffffff 0%,#f8fafc 100%)",
+    "title_grad":        "linear-gradient(130deg,#0f172a 0%,#1e3a8a 50%,#0369a1 100%)",
+    "green":             "#15803d",
+    "amber":             "#b45309",
+    "blue":              "#1d4ed8",
+    "red":               "#b91c1c",
+    "purple":            "#6d28d9",
+    "txt":               "#0f172a",
+    "txt2":              "#334155",
+    "txt3":              "#64748b",
+    "ctrl_bg":           "#ffffff",
+    "ctrl_border":       "rgba(0,0,0,0.09)",
+    "legend_bg":         "#ffffff",
+    "legend_border":     "rgba(0,0,0,0.08)",
+    "rbanner_bg":        "linear-gradient(135deg,#ffffff 0%,#f1f5f9 100%)",
+    "df_row_border":     "rgba(0,0,0,0.06)",
+    "th_bg":             "#f1f5f9",
+    "th_color":          "#1e293b",
+    "th_border":         "rgba(0,0,0,0.08)",
+    "toggle_bg":         "#ffffff",
+    "toggle_bdr":        "rgba(0,0,0,0.12)",
+    "toggle_txt":        "#0f172a",
+    "toggle_icon":       "🌙",
+    "toggle_label":      "Dark Mode",
+    "btn_bg":            "linear-gradient(135deg,#16a34a,#15803d)",
+    "btn_txt":           "#ffffff",
+    "step_num_color":    "#1d4ed8",
+    "step_hover_border": "rgba(29,78,216,0.25)",
+    "hero_badge_bg":     "rgba(21,128,61,0.08)",
+    "hero_badge_bdr":    "rgba(21,128,61,0.25)",
+    "hero_badge_txt":    "#15803d",
 }
 
 T = DARK if st.session_state.theme == "dark" else LIGHT
@@ -635,12 +673,12 @@ html, body, [class*="css"] {{ font-family: 'Inter', sans-serif !important; color
 }}
 .hero-badge {{
     display:inline-flex; align-items:center; gap:7px;
-    background:rgba(0,200,100,0.09); border:1px solid rgba(0,200,100,0.3);
+    background:{T['hero_badge_bg']}; border:1px solid {T['hero_badge_bdr']};
     border-radius:40px; padding:4px 14px;
-    font-size:0.68rem; font-weight:600; color:{T['green']};
+    font-size:0.68rem; font-weight:600; color:{T['hero_badge_txt']};
     letter-spacing:1.5px; text-transform:uppercase; margin-bottom:0.8rem;
 }}
-.pulse {{ width:7px; height:7px; border-radius:50%; background:{T['green']};
+.pulse {{ width:7px; height:7px; border-radius:50%; background:{T['hero_badge_txt']};
     animation:blink 2s ease-in-out infinite; }}
 @keyframes blink {{ 0%,100%{{opacity:1;transform:scale(1)}} 50%{{opacity:.3;transform:scale(.65)}} }}
 .hero-title {{
@@ -674,8 +712,8 @@ html, body, [class*="css"] {{ font-family: 'Inter', sans-serif !important; color
 
 /* ── Primary Run Button ── */
 button[kind="primary"], .stButton > button[kind="primary"] {{
-    background:linear-gradient(135deg,#00bb5a,{T['green']}) !important;
-    color:#040c12 !important; font-weight:800 !important; font-size:.95rem !important;
+    background:{T['btn_bg']} !important;
+    color:{T['btn_txt']} !important; font-weight:800 !important; font-size:.95rem !important;
     border:none !important; border-radius:12px !important; padding:.75rem !important;
     box-shadow:0 4px 22px rgba(0,200,100,.25) !important; transition:all .25s ease !important;
 }}
@@ -784,8 +822,8 @@ button[kind="secondary"]:hover, .stButton > button[kind="secondary"]:hover {{
 .idle-steps {{ display:flex; gap:1.2rem; margin-top:2.2rem; flex-wrap:wrap; justify-content:center; }}
 .step {{ background:{T['bg_card']}; border:1px solid {T['border']}; border-radius:13px;
     padding:1rem 1.2rem; width:145px; text-align:left; transition:border-color .25s; }}
-.step:hover {{ border-color:{T['green']}44; }}
-.step-n {{ font-size:1.3rem; font-weight:800; color:{T['green']}; font-family:'JetBrains Mono',monospace; margin-bottom:.3rem; }}
+.step:hover {{ border-color:{T['step_hover_border']}; }}
+.step-n {{ font-size:1.3rem; font-weight:800; color:{T['step_num_color']}; font-family:'JetBrains Mono',monospace; margin-bottom:.3rem; }}
 .step-t {{ font-size:.78rem; font-weight:600; color:{T['txt']}; margin-bottom:.15rem; }}
 .step-d {{ font-size:.68rem; color:{T['txt3']}; line-height:1.4; }}
 [data-testid="stSlider"] label {{ font-size:.76rem !important; color:{T['txt2']} !important; }}
@@ -1006,7 +1044,7 @@ if run_button:
                 view["Symbol"] = view["Symbol"].apply(
                     lambda s: f"https://in.tradingview.com/chart/?symbol=NSE:{s}"
                 )
-                styled_view = style_dataframe(view)
+                styled_view = style_dataframe(view, theme=st.session_state.theme)
                 st.dataframe(
                     styled_view,
                     column_config={
@@ -1020,28 +1058,28 @@ if run_button:
                     hide_index=True
                 )
 
-                st.markdown("""
+                st.markdown(f"""
                 <div class="legend">
-                    <div class="leg-item"><span class="leg-dot" style="background:#00ff88"></span>
+                    <div class="leg-item"><span class="leg-dot" style="background:{T['green']}"></span>
                         <span class="leg-txt">BUY &mdash; Score &ge; 85</span></div>
-                    <div class="leg-item"><span class="leg-dot" style="background:#ffb800"></span>
+                    <div class="leg-item"><span class="leg-dot" style="background:{T['amber']}"></span>
                         <span class="leg-txt">WATCH / PULLBACK &mdash; Score &ge; 75</span></div>
-                    <div class="leg-item"><span class="leg-dot" style="background:#64b5f6"></span>
+                    <div class="leg-item"><span class="leg-dot" style="background:{T['blue']}"></span>
                         <span class="leg-txt">WATCHLIST &mdash; Score &ge; 65</span></div>
-                    <div class="leg-item"><span class="leg-dot" style="background:#ff5252"></span>
+                    <div class="leg-item"><span class="leg-dot" style="background:{T['red']}"></span>
                         <span class="leg-txt">AVOID &mdash; Score &lt; 65</span></div>
                     <div class="leg-tip">Click any symbol to open TradingView chart &rarr;</div>
                 </div>
                 """, unsafe_allow_html=True)
 
 else:
-    st.markdown("""
+    st.markdown(f"""
     <div class="idle">
         <div class="idle-ico">&#128200;</div>
         <div class="idle-h">Ready to Scan the Market</div>
         <div class="idle-p">
-            Expand the <strong style="color:#00ff88;">Scanner Controls</strong> above,
-            tune your filters, then hit <strong style="color:#00ff88;">&#128640; Run Full Scan</strong>
+            Expand the <strong style="color:{T['txt']};">Scanner Controls</strong> above,
+            tune your filters, then hit <strong style="color:{T['green']};">&#128640; Run Full Scan</strong>
             to identify momentum breakout candidates across the entire Nifty 500 universe.
         </div>
         <div class="idle-steps">
