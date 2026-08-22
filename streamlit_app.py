@@ -659,6 +659,46 @@ html, body, [class*="css"] { font-family: 'Inter', sans-serif !important; color:
 .step-t { font-size:.78rem; font-weight:600; color:var(--txt); margin-bottom:.15rem; }
 .step-d { font-size:.68rem; color:var(--txt3); line-height:1.4; }
 [data-testid="stSlider"] label { font-size:.76rem !important; color:var(--txt2) !important; }
+
+/* ── Hide sidebar entirely (controls are inline) ── */
+[data-testid="stSidebar"] { display:none !important; }
+[data-testid="collapsedControl"] { display:none !important; }
+.stMainBlockContainer { max-width:100% !important; padding-left:1.5rem !important; padding-right:1.5rem !important; }
+
+/* ── Inline Controls Panel ── */
+.ctrl-panel {
+    background: linear-gradient(135deg,rgba(0,255,136,0.04),rgba(100,181,246,0.04));
+    border: 1px solid rgba(0,255,136,0.18);
+    border-radius: 16px;
+    padding: 1.5rem 1.8rem;
+    margin-bottom: 1.5rem;
+}
+.ctrl-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 0.5rem 2rem;
+}
+.ctrl-section-title {
+    font-size: .65rem; font-weight: 700; color: var(--txt3);
+    text-transform: uppercase; letter-spacing: 1.3px;
+    margin: 1rem 0 0.3rem; grid-column: 1/-1;
+}
+
+/* ── Mobile responsive tweaks ── */
+@media (max-width: 640px) {
+    .hero { padding: 1.6rem 1.2rem; }
+    .hero-title { font-size: 2rem; }
+    .hero-sub { font-size: .85rem; }
+    .hero-meta { gap: 1.2rem; }
+    .kpi-grid { grid-template-columns: repeat(3, 1fr); gap: .6rem; }
+    .kpi-val  { font-size: 1.4rem; }
+    .ctrl-grid { grid-template-columns: 1fr; }
+    .idle-steps { gap: .8rem; }
+    .step { width: 130px; }
+    .rbanner { flex-direction: column; gap: .5rem; }
+    .legend { gap: 1rem; }
+    .leg-tip { display: none; }
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -685,45 +725,44 @@ st.markdown(f"""
 
 
 # ─────────────────────────────────────────────
-#  Sidebar Controls
+#  Inline Scanner Controls (mobile-friendly)
 # ─────────────────────────────────────────────
 
-with st.sidebar:
-    st.markdown("""
-    <div class="sb-head">
-        <div class="sb-title">&#9881;&#65039; Scanner Controls</div>
-        <div class="sb-sub">Tune filters &amp; thresholds</div>
+st.markdown("""
+<div class="ctrl-panel">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:1rem;">
+        <div>
+            <div style="font-size:1rem;font-weight:700;color:#00ff88;">&#9881;&#65039; Scanner Controls</div>
+            <div style="font-size:.72rem;color:#8892a4;margin-top:2px;">Tune filters &amp; thresholds below</div>
+        </div>
+        <div style="font-size:.68rem;color:#3d4f65;text-align:right;line-height:1.7;">
+            &#128208; Momentum 60% &nbsp;&bull;&nbsp; &#127919; Entry 40% &nbsp;&bull;&nbsp; &#128737;&#65039; R:R &ge; 1.5
+        </div>
     </div>
-    """, unsafe_allow_html=True)
+</div>
+""", unsafe_allow_html=True)
 
-    st.markdown('<div class="flbl">&#128202; RSI Thresholds</div>', unsafe_allow_html=True)
-    min_m   = st.slider("Monthly RSI >=", min_value=50, max_value=75, value=60)
-    min_w   = st.slider("Weekly RSI >=",  min_value=50, max_value=75, value=60)
-    min_d   = st.slider("Daily RSI >=",   min_value=40, max_value=70, value=50)
+with st.expander("⚙️ Expand to configure filters", expanded=True):
+    st.markdown('<div class="ctrl-section-title">&#128202; RSI Thresholds</div>', unsafe_allow_html=True)
+    col_r1, col_r2, col_r3 = st.columns(3)
+    with col_r1:
+        min_m = st.slider("Monthly RSI >=", min_value=50, max_value=75, value=60)
+    with col_r2:
+        min_w = st.slider("Weekly RSI >=",  min_value=50, max_value=75, value=60)
+    with col_r3:
+        min_d = st.slider("Daily RSI >=",   min_value=40, max_value=70, value=50)
 
-    st.markdown("<hr style='border-color:rgba(255,255,255,0.05);margin:0.8rem 0'>", unsafe_allow_html=True)
-    st.markdown('<div class="flbl">&#128200; Trend &amp; Proximity</div>', unsafe_allow_html=True)
-    min_adx = st.slider("ADX Minimum",       min_value=10, max_value=40, value=20)
-    max_52w = st.slider("Max 52W Distance %", min_value=5,  max_value=25, value=10)
-
-    st.markdown("<hr style='border-color:rgba(255,255,255,0.05);margin:0.8rem 0'>", unsafe_allow_html=True)
-    st.markdown('<div class="flbl">&#127919; Display</div>', unsafe_allow_html=True)
-    top_n   = st.slider("Top Results",        min_value=5,  max_value=50, value=20)
+    st.markdown('<div class="ctrl-section-title">&#128200; Trend, Proximity &amp; Display</div>', unsafe_allow_html=True)
+    col_t1, col_t2, col_t3 = st.columns(3)
+    with col_t1:
+        min_adx = st.slider("ADX Minimum",       min_value=10, max_value=40, value=20)
+    with col_t2:
+        max_52w = st.slider("Max 52W Distance %", min_value=5,  max_value=25, value=10)
+    with col_t3:
+        top_n   = st.slider("Top Results",        min_value=5,  max_value=50, value=20)
 
     st.markdown("<br>", unsafe_allow_html=True)
     run_button = st.button("\U0001f680 Run Full Scan", use_container_width=True)
-
-    st.markdown("""
-    <div style="margin-top:1.5rem;padding:.85rem 1rem;background:rgba(255,255,255,.02);
-         border:1px solid rgba(255,255,255,.05);border-radius:10px;">
-        <div style="font-size:.6rem;color:#3d4f65;text-transform:uppercase;letter-spacing:1px;margin-bottom:.5rem;">Scoring Model</div>
-        <div style="font-size:.72rem;color:#8892a4;line-height:1.9;">
-            &#128208; Momentum Score (60%)<br>
-            &#127919; Entry Score (40%)<br>
-            &#128737;&#65039; R:R Filter &ge; 1.5
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────
@@ -895,8 +934,8 @@ else:
         <div class="idle-ico">&#128200;</div>
         <div class="idle-h">Ready to Scan the Market</div>
         <div class="idle-p">
-            Configure your filters in the sidebar, then click
-            <strong style="color:#00ff88;">Run Full Scan</strong>
+            Expand the <strong style="color:#00ff88;">Scanner Controls</strong> above,
+            tune your filters, then hit <strong style="color:#00ff88;">&#128640; Run Full Scan</strong>
             to identify momentum breakout candidates across the entire Nifty 500 universe.
         </div>
         <div class="idle-steps">
