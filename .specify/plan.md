@@ -26,6 +26,33 @@ Streamlit Server (streamlit_app.py) — port 8501/8502
                 └── Render Hero, KPIs, Controls & Dataframe
 ```
 
+### 1.1 End-to-End Pipeline Flow Diagram
+
+```mermaid
+flowchart TD
+    Start(["User clicks 'Run Full Scan'"]) --> FetchSym["1. Symbol Resolution\n(get_nifty500_symbols)\nNifty Indices CSV / GitHub fallback"]
+    FetchSym --> CheckCache{"2. Daily Parquet Cache exists?\n(cache/prices_YYYY-MM-DD.parquet)"}
+    
+    CheckCache -- "Yes (Cache Hit)" --> ReadParquet["Read 3Y Daily OHLCV from Disk\n(< 2 seconds)"]
+    CheckCache -- "No (Cache Miss)" --> DownloadYF["Download 500 Tickers via yfinance\n(80 tickers/batch, multi-threaded ~60s)"]
+    DownloadYF --> SaveParquet["Save to Parquet Cache"]
+    SaveParquet --> ReadParquet
+
+    ReadParquet --> FetchBench["3. Fetch Benchmark (^CRSLDX / ^NSEI)\nCompute 3M & 6M Market Returns"]
+    FetchBench --> MetricsEngine["4. Multi-Timeframe Metric Engine\n• Resample to Weekly (W-FRI) → Weekly RSI(14)\n• Resample to Monthly (ME) → Monthly RSI(14)\n• Daily EMA 20/50/200, ADX(14), ATR(14)\n• 20D Volume Ratio, 52W High Distance\n• Relative Strength vs Nifty 500"]
+
+    MetricsEngine --> Layer1{"5. Layer 1: Hard Eligibility Filter\n• Monthly RSI ≥ min_m\n• Weekly RSI ≥ min_w\n• Daily RSI ≥ min_d\n• Price > EMA20 > EMA50 > EMA200\n• ADX ≥ min_adx\n• 52W Dist ≤ max_52w\n• 3M & 6M Returns > 0"}
+
+    Layer1 -- "Passes" --> Layer2["6. Layer 2: Composite Scoring\n• Momentum Score (60%)\n• Entry Score (40%)\n• Final Score = 0.60*M + 0.40*E"]
+    Layer1 -- "Fails" --> Discard["Discard Stock"]
+
+    Layer2 --> RRGate{"7. Minimum Risk/Reward Gate\n(R:R ≥ 1.5)"}
+    RRGate -- "Yes" --> Rank["8. Rank Top N Candidates\nCompute 6 KPI Summary Metrics"]
+    RRGate -- "No" --> Discard
+
+    Rank --> Render["9. Interactive UI Presentation\n• Theme-Aware style_dataframe (Dark / Light)\n• Clickable TradingView Chart Deep Links\n• JetBrains Mono Typography\n• One-Click CSV Export"]
+```
+
 ---
 
 ## 2. Application Controls & Logic (`streamlit_app.py`)

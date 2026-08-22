@@ -42,6 +42,19 @@ Open your browser at **http://localhost:8501** (or **http://localhost:8502**).
 
 ## How It Works
 
+```mermaid
+flowchart TD
+    A["Nifty 500 (~500 Tickers)"] --> B["Parquet Cache Check (< 2s) / yfinance Download"]
+    B --> C["Benchmark Comparison (^CRSLDX Nifty 500)"]
+    C --> D["Multi-Timeframe Indicator Engine (D, W, M)"]
+    D --> E{"Layer 1: Hard Filters\n(EMA align, RSI mins, ADX, 52W)"}
+    E -- "Pass" --> F["Layer 2: Composite Scoring\n(Momentum 60% + Entry 40%)"]
+    E -- "Fail" --> X["Excluded"]
+    F --> G{"R:R ≥ 1.5 Gate"}
+    G -- "Pass" --> H["Ranked Interactive Table\n+ TradingView Links"]
+    G -- "Fail" --> X
+```
+
 The scanner runs in two layers:
 
 ### Layer 1 — Hard Eligibility Filters
