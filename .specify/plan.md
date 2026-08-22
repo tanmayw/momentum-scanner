@@ -13,7 +13,7 @@ Browser (Streamlit Client)
         ▲
         │ Websocket Connection
         ▼
-Streamlit Server (app.py) — port 8501
+Streamlit Server (streamlit_app.py) — port 8501
         │
         ├── get_nifty500_symbols()     → NSE CSV (3-URL fallback chain)
         ├── download_prices()          → yfinance batch (80/batch), Parquet cache
@@ -26,7 +26,7 @@ Streamlit Server (app.py) — port 8501
 
 ---
 
-## 2. Application Controls (`app.py`)
+## 2. Application Controls (`streamlit_app.py`)
 
 The user configures the scanner settings in the sidebar panel.
 
@@ -81,7 +81,7 @@ get_nifty500_symbols()
 
 ---
 
-## 3. UI Design (`app.py`)
+## 3. UI Design (`streamlit_app.py`)
 
 ### 3.1 Layout & Controls
 - **Sidebar**: Integrates 6 slider controls (Monthly/Weekly/Daily RSI, ADX, 52W distance, Top N rows) and a `Run Scanner` button.
@@ -119,7 +119,7 @@ get_nifty500_symbols()
 pip install -r requirements.txt
 
 # Run server
-streamlit run app.py
+streamlit run streamlit_app.py
 # → http://localhost:8501
 ```
 
