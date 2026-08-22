@@ -9,6 +9,20 @@ from datetime import datetime
 from pathlib import Path
 import streamlit as st
 
+from intraday_scanner import (
+    PRESET_UNIVERSES,
+    download_ticker_data,
+    download_intraday_timeframes,
+    evaluate_stock_intraday,
+    scan_intraday_universe,
+    calculate_position_size,
+    rsi as intraday_rsi,
+    ema as intraday_ema,
+    vwap as intraday_vwap,
+    atr as intraday_atr,
+    volume_ratio as intraday_volume_ratio
+)
+
 NSE_CSV_URLS = [
     "https://www.niftyindices.com/IndexConstituent/ind_nifty500list.csv",
     "https://www.nseindia.com/content/indices/ind_nifty500list.csv",
@@ -42,7 +56,7 @@ def get_nifty500_symbols():
 
 
 # ─────────────────────────────────────────────
-#  Technical indicator helpers
+#  Technical indicator helpers (Swing Scanner)
 # ─────────────────────────────────────────────
 
 def rsi(s, period=14):
@@ -82,7 +96,7 @@ def adx(df, period=14):
 
 
 # ─────────────────────────────────────────────
-#  Caching & data download
+#  Caching & data download (Swing Scanner)
 # ─────────────────────────────────────────────
 
 CACHE_DIR = Path("cache")
@@ -123,10 +137,6 @@ def download_prices(symbols):
     return all_data
 
 def get_benchmark():
-    """
-    Download benchmark index for relative-strength calculation.
-    Tries Nifty 500 (^CRSLDX) first, falls back to Nifty 50 (^NSEI).
-    """
     for ticker in ["^CRSLDX", "^NSEI"]:
         try:
             raw = yf.download(ticker, period="3y", interval="1d",
@@ -143,31 +153,22 @@ def get_benchmark():
 
 
 # ─────────────────────────────────────────────
-#  Scoring helpers — exactly as per spec
+#  Scoring helpers (Swing Scanner)
 # ─────────────────────────────────────────────
 
 def rsi_score(x, kind):
-    """RSI scoring tables from spec (monthly/weekly: 15 pts, daily: 10 pts)."""
     if pd.isna(x):
         return 0
     if kind in ("monthly", "weekly"):
         bins = [(60, 65, 10), (65, 70, 12), (70, 75, 15), (75, 80, 12), (80, 101, 8)]
-    else:  # daily
+    else:
         bins = [(50, 55, 7), (55, 60, 10), (60, 65, 9), (65, 70, 7), (70, 75, 4), (75, 101, 2)]
     for lo, hi, pts in bins:
         if lo <= x < hi:
             return pts
     return 0
 
-
 def calc_trend_score(price, e20, e50, e200):
-    """
-    Spec §5 — Trend Score (15 pts):
-      15 → Close > EMA20 > EMA50 > EMA200   (full alignment)
-      12 → Close > EMA20 > EMA50, EMA50 ≈ EMA200 (within 2%)
-       8 → Close > EMA50 > EMA200
-       0 → anything else
-    """
     if any(pd.isna(v) for v in [price, e20, e50, e200]):
         return 0
     if price > e20 and e20 > e50 and e50 > e200:
@@ -178,69 +179,41 @@ def calc_trend_score(price, e20, e50, e200):
         return 8
     return 0
 
-
 def calc_rs_score(rs_decimal):
-    """
-    Spec §9 — Relative Strength score (5 pts).
-    rs_decimal = stock_6M_return - benchmark_6M_return  (as a decimal, e.g. 0.18)
-    """
     if pd.isna(rs_decimal):
         return 0
-    rs = rs_decimal * 100  # convert to percentage points
+    rs = rs_decimal * 100
     if rs > 20:  return 5
     if rs > 10:  return 4
     if rs > 5:   return 3
     if rs > 0:   return 1
     return 0
 
-
 def calc_price_vs_ema20_score(price, e20):
-    """
-    Spec §13 Entry Score — Price vs EMA20 (15 pts).
-    Sweet spot = just pulled back to EMA20 (0–3% above).
-    More extended → lower score.
-    """
     if pd.isna(price) or pd.isna(e20) or e20 == 0:
         return 0
     pct_above = (price - e20) / e20 * 100
-    if pct_above < 0:    return 0   # below EMA20
-    if pct_above <= 3:   return 15  # ideal pullback zone
-    if pct_above <= 8:   return 12  # mild extension
-    if pct_above <= 15:  return 8   # notable extension
-    return 3                         # very extended
-
+    if pct_above < 0:    return 0
+    if pct_above <= 3:   return 15
+    if pct_above <= 8:   return 12
+    if pct_above <= 15:  return 8
+    return 3
 
 def calc_breakout_pullback_score(price, e20, high52, vol_ratio):
-    """
-    Spec §13 Entry Score — Breakout / Pullback setup (15 pts).
-    Combines price pattern with volume confirmation so volume alone
-    on a falling stock does NOT score well.
-      15 → Price within 2% of 52W high AND volume >= 1.5× avg  (breakout)
-      12 → Price has pulled back to EMA20 (within 2%) from above (pullback to support)
-       8 → Price above EMA20 with decent volume (continuation)
-       3 → Default / unclear setup
-    """
     if any(pd.isna(v) for v in [price, e20, high52, vol_ratio]) or high52 == 0:
         return 3
     dist_from_high = (high52 - price) / high52
     pct_above_ema20 = (price - e20) / e20 if e20 != 0 else 0
 
-    # Breakout: near all-time/52W high with strong volume
     if dist_from_high <= 0.02 and vol_ratio >= 1.5:
         return 15
-    # Pullback to EMA20: clean entry at dynamic support
     if 0 <= pct_above_ema20 <= 0.02:
         return 12
-    # Continuation move above EMA20 with above-average volume
     if price > e20 and vol_ratio >= 1.0:
         return 8
     return 3
 
-
 def calc_rr_score(rr_ratio):
-    """
-    Spec §13 Entry Score — Risk/Reward component (5 pts).
-    """
     if pd.isna(rr_ratio) or rr_ratio <= 0:
         return 0
     if rr_ratio >= 2.5: return 5
@@ -248,11 +221,6 @@ def calc_rr_score(rr_ratio):
     if rr_ratio >= 1.5: return 3
     if rr_ratio >= 1.0: return 1
     return 0
-
-
-# ─────────────────────────────────────────────
-#  Per-stock metric calculation
-# ─────────────────────────────────────────────
 
 def calculate_metrics(symbol, d, benchmark):
     d = d[["Open", "High", "Low", "Close", "Volume"]].dropna().copy()
@@ -284,7 +252,6 @@ def calculate_metrics(symbol, d, benchmark):
     ret3 = float(close.iloc[-1] / close.iloc[-64]  - 1) if len(close) >= 64  else np.nan
     ret6 = float(close.iloc[-1] / close.iloc[-126] - 1) if len(close) >= 126 else np.nan
 
-    # Relative strength vs benchmark (Nifty 500 or Nifty 50)
     b = benchmark.dropna()
     rs6 = np.nan
     if len(b) >= 126 and not pd.isna(ret6):
@@ -318,52 +285,37 @@ def calculate_metrics(symbol, d, benchmark):
         "Hard Filter":  hard,
     }
 
-
-# ─────────────────────────────────────────────
-#  Composite scoring (spec §3–§13)
-# ─────────────────────────────────────────────
-
 def score_candidates(df):
     out = df.copy()
 
-    # ── Momentum Score components ──────────────────────────────────
-
-    # RSI scores (spec §4)
     out["M RSI Score"] = out["Monthly RSI"].apply(lambda x: rsi_score(x, "monthly"))
     out["W RSI Score"] = out["Weekly RSI"].apply(lambda x: rsi_score(x, "weekly"))
     out["D RSI Score"] = out["Daily RSI"].apply(lambda x: rsi_score(x, "daily"))
 
-    # Trend Score with 15/12/8/0 grading (spec §5)
     out["Trend Score"] = out.apply(
         lambda r: calc_trend_score(r["Price"], r["EMA20"], r["EMA50"], r["EMA200"]), axis=1
     )
 
-    # ADX Score (spec §6)
     out["ADX Score"] = out["ADX"].apply(
         lambda x: 0 if x < 20 else 5 if x < 25 else 7 if x < 30 else 10 if x < 40 else 8 if x < 50 else 6
     )
 
-    # 3M momentum — discrete percentile buckets (spec §7)
     ret3_rank = out["3M Return"].rank(pct=True)
     out["3M Score"] = ret3_rank.apply(
         lambda p: 10 if p >= 0.90 else 8 if p >= 0.75 else 6 if p >= 0.50 else 4 if p >= 0.25 else 0
     )
 
-    # 6M momentum — discrete percentile buckets (spec §8)
     ret6_rank = out["6M Return"].rank(pct=True)
     out["6M Score"] = ret6_rank.apply(
         lambda p: 10 if p >= 0.90 else 8 if p >= 0.75 else 6 if p >= 0.50 else 4 if p >= 0.25 else 0
     )
 
-    # Relative Strength — discrete bucket table (spec §9)
     out["RS Score"] = out["RS vs Nifty"].apply(calc_rs_score)
 
-    # Volume Score (spec §10)
     out["Volume Score"] = out["Vol Ratio"].apply(
         lambda x: 0 if x < 1 else 2 if x < 1.2 else 3 if x < 1.5 else 4 if x < 2 else 5
     )
 
-    # 52W Distance Score (spec §11)
     out["52W Score"] = out["52W Distance"].apply(
         lambda x: 5 if x <= 0.05 else 4 if x <= 0.10 else 2 if x <= 0.15 else 0
     )
@@ -374,7 +326,6 @@ def score_candidates(df):
     ]
     out["Momentum Score"] = out[score_cols].sum(axis=1).round(1)
 
-    # ── Risk / Reward (needed before Entry Score) ──────────────────
     out["Stop Loss"]  = (out["Price"] - 1.5 * out["ATR"]).round(2)
     out["Target 2%"]  = (out["Price"] * 1.02).round(2)
     out["Target 5%"]  = (out["Price"] * 1.05).round(2)
@@ -383,39 +334,30 @@ def score_candidates(df):
                             [np.inf, -np.inf], np.nan).round(2)
     out["Risk %"]     = (out["Risk Amt"] / out["Price"] * 100).round(2)
 
-    # ── Filter: remove setups with R:R < 1.5 (spec §15) ──────────
     out = out[out["RR Ratio"] >= 1.5].copy()
     if out.empty:
         return out
 
-    # ── Entry Score components (spec §13) ─────────────────────────
-
-    # 1. Daily RSI setup — 15 pts
     out["Entry RSI Score"] = out["Daily RSI"].apply(
         lambda x: 15 if 55 <= x < 65 else 12 if 50 <= x < 55 else 8 if 65 <= x < 70 else 3
     )
 
-    # 2. Price vs EMA20 — 15 pts
     out["Entry EMA20 Score"] = out.apply(
         lambda r: calc_price_vs_ema20_score(r["Price"], r["EMA20"]), axis=1
     )
 
-    # 3. Breakout / Pullback detection — 15 pts
     out["Entry BP Score"] = out.apply(
         lambda r: calc_breakout_pullback_score(
             r["Price"], r["EMA20"], r["52W High"], r["Vol Ratio"]
         ), axis=1
     )
 
-    # 4. Volume confirmation — 10 pts
     out["Entry Vol Score"] = out["Vol Ratio"].apply(
         lambda x: 10 if x >= 1.5 else 7 if x >= 1.2 else 4
     )
 
-    # 5. Risk/Reward — 5 pts
     out["Entry RR Score"] = out["RR Ratio"].apply(calc_rr_score)
 
-    # Entry Score = Momentum(40%) + RSI(15) + EMA20(15) + BP(15) + Vol(10) + RR(5) = 100
     out["Entry Score"] = (
         out["Momentum Score"] * 0.40
         + out["Entry RSI Score"]
@@ -425,10 +367,8 @@ def score_candidates(df):
         + out["Entry RR Score"]
     ).clip(upper=100).round(1)
 
-    # Final Score (spec §13)
     out["Final Score"] = (0.60 * out["Momentum Score"] + 0.40 * out["Entry Score"]).round(1)
 
-    # Action labels (spec §14)
     out["Action"] = np.select(
         [out["Final Score"] >= 85, out["Final Score"] >= 75, out["Final Score"] >= 65],
         ["BUY", "WATCH / PULLBACK", "WATCHLIST"],
@@ -439,31 +379,23 @@ def score_candidates(df):
 
 
 # ─────────────────────────────────────────────
-#  Dataframe Styling
+#  DataFrame Styling Helpers
 # ─────────────────────────────────────────────
 
 def style_dataframe(df, theme="dark"):
     is_light = (theme == "light")
-    
-    # Action badge colors
     c_buy_bg    = "rgba(22, 163, 74, 0.12)" if is_light else "rgba(0, 255, 136, 0.12)"
     c_buy_txt   = "#15803d" if is_light else "#00ff88"
-    
     c_watch_bg  = "rgba(217, 119, 6, 0.12)" if is_light else "rgba(255, 184, 0, 0.12)"
     c_watch_txt = "#b45309" if is_light else "#ffb800"
-    
     c_list_bg   = "rgba(37, 99, 235, 0.10)" if is_light else "rgba(100, 181, 246, 0.12)"
     c_list_txt  = "#1d4ed8" if is_light else "#64b5f6"
-    
     c_avoid_bg  = "rgba(220, 38, 38, 0.10)" if is_light else "rgba(255, 82, 82, 0.12)"
     c_avoid_txt = "#b91c1c" if is_light else "#ff5252"
-    
     c_pos_txt   = "#15803d" if is_light else "#00ff88"
     c_neg_txt   = "#b91c1c" if is_light else "#ff5252"
-    
     c_rsi_hot_bg  = "rgba(217, 119, 6, 0.12)" if is_light else "rgba(255, 152, 0, 0.15)"
     c_rsi_hot_txt = "#b45309" if is_light else "#ff9800"
-    
     c_rsi_warm_bg  = "rgba(234, 179, 8, 0.15)" if is_light else "rgba(255, 235, 59, 0.08)"
     c_rsi_warm_txt = "#854d0e" if is_light else "#ffeb3b"
 
@@ -534,23 +466,91 @@ def style_dataframe(df, theme="dark"):
     return styled
 
 
+def style_intraday_dataframe(df, theme="dark"):
+    is_light = (theme == "light")
+    c_strong_bg = "rgba(22, 163, 74, 0.14)" if is_light else "rgba(0, 255, 136, 0.14)"
+    c_strong_txt = "#15803d" if is_light else "#00ff88"
+    c_conf_bg = "rgba(13, 148, 136, 0.12)" if is_light else "rgba(45, 212, 191, 0.14)"
+    c_conf_txt = "#0f766e" if is_light else "#2dd4bf"
+    c_watch_bg = "rgba(217, 119, 6, 0.12)" if is_light else "rgba(255, 184, 0, 0.12)"
+    c_watch_txt = "#b45309" if is_light else "#ffb800"
+    c_notrade_bg = "rgba(220, 38, 38, 0.08)" if is_light else "rgba(255, 82, 82, 0.10)"
+    c_notrade_txt = "#b91c1c" if is_light else "#ff5252"
+
+    c_breakout_bg = "rgba(147, 51, 234, 0.12)" if is_light else "rgba(187, 134, 252, 0.15)"
+    c_breakout_txt = "#7e22ce" if is_light else "#bb86fc"
+    c_vwap_bg = "rgba(2, 132, 199, 0.12)" if is_light else "rgba(56, 189, 248, 0.15)"
+    c_vwap_txt = "#0369a1" if is_light else "#38bdf8"
+
+    def color_signal(val):
+        if val == "STRONG BUY CANDIDATE":
+            return f"background-color:{c_strong_bg};color:{c_strong_txt};font-weight:700;"
+        elif val == "BUY ON CONFIRMATION":
+            return f"background-color:{c_conf_bg};color:{c_conf_txt};font-weight:700;"
+        elif val == "WATCH":
+            return f"background-color:{c_watch_bg};color:{c_watch_txt};font-weight:600;"
+        return f"background-color:{c_notrade_bg};color:{c_notrade_txt};font-weight:500;"
+
+    def color_setup(val):
+        if val == "BREAKOUT":
+            return f"background-color:{c_breakout_bg};color:{c_breakout_txt};font-weight:700;"
+        elif val == "VWAP MOMENTUM":
+            return f"background-color:{c_vwap_bg};color:{c_vwap_txt};font-weight:600;"
+        elif val == "PULLBACK / RECLAIM":
+            return f"background-color:{c_conf_bg};color:{c_conf_txt};font-weight:600;"
+        return "color:#64748b;" if is_light else "color:#9e9e9e;"
+
+    def color_score(val):
+        if pd.isna(val): return ""
+        if val >= 85:   return f"color:{c_strong_txt};font-weight:800;"
+        elif val >= 75: return f"color:{c_conf_txt};font-weight:700;"
+        elif val >= 65: return f"color:{c_watch_txt};font-weight:600;"
+        return "color:#64748b;" if is_light else "color:#9e9e9e;"
+
+    styled = df.style \
+        .map(color_signal, subset=["Signal"]) \
+        .map(color_setup, subset=["Setup"]) \
+        .map(color_score, subset=["Score"])
+
+    format_dict = {
+        "Price":        "\u20b9{:.2f}",
+        "VWAP":         "\u20b9{:.2f}",
+        "Stop_Loss":    "\u20b9{:.2f}",
+        "Target_1":     "\u20b9{:.2f}",
+        "Target_2":     "\u20b9{:.2f}",
+        "Score":        "{:.0f}",
+        "Daily_RSI":    "{:.1f}",
+        "Hourly_RSI":   "{:.1f}",
+        "M15_RSI":      "{:.1f}",
+        "Volume_Ratio": "{:.2f}x",
+        "RR_Ratio":     "{:.2f}:1",
+        "Quantity":     "{:d}"
+    }
+    cols_to_format = {k: v for k, v in format_dict.items() if k in df.columns}
+    styled = styled.format(cols_to_format)
+    return styled
+
+
 # ─────────────────────────────────────────────
 #  Page Config
 # ─────────────────────────────────────────────
 
 st.set_page_config(
-    page_title="Nifty 500 Momentum Scanner",
-    page_icon="\U0001f4c8",
+    page_title="Nifty Momentum & Intraday Scanner",
+    page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
 # ─────────────────────────────────────────────
-#  Theme State
+#  Theme & View State
 # ─────────────────────────────────────────────
 
 if "theme" not in st.session_state:
     st.session_state.theme = "dark"
+
+if "app_view" not in st.session_state:
+    st.session_state.app_view = "Swing Momentum"
 
 DARK = {
     "app_bg":            "linear-gradient(160deg,#050b14 0%,#080f1d 60%,#050b14 100%)",
@@ -641,9 +641,8 @@ html, body, [class*="css"] {{ font-family: 'Inter', sans-serif !important; color
 .stApp {{ background: {T['app_bg']} !important; }}
 #MainMenu, footer, header {{ visibility: hidden; }}
 
-/* ── Container Layout (Desktop & Mobile) ── */
 .block-container, [data-testid="stMainBlockContainer"], .main .block-container {{
-    max-width: 1040px !important;
+    max-width: 1060px !important;
     margin: 0 auto !important;
     padding-top: 1.2rem !important;
     padding-bottom: 3rem !important;
@@ -651,15 +650,14 @@ html, body, [class*="css"] {{ font-family: 'Inter', sans-serif !important; color
     padding-right: 1.5rem !important;
 }}
 
-/* ── Top Bar ── */
 .top-nav {{
     display: flex;
-    justify-content: flex-end;
+    justify-content: space-between;
     align-items: center;
-    margin-bottom: 0.6rem;
+    margin-bottom: 0.8rem;
+    gap: 1rem;
 }}
 
-/* ── Hero ── */
 .hero {{
     background: {T['hero_bg']};
     border: 1px solid {T['border_hero']}; border-radius: 20px;
@@ -692,7 +690,6 @@ html, body, [class*="css"] {{ font-family: 'Inter', sans-serif !important; color
 .hm-label {{ font-size:.62rem; color:{T['txt3']}; text-transform:uppercase; letter-spacing:1.2px; margin-bottom:2px; font-weight:600; }}
 .hm-val   {{ font-size:.88rem; color:{T['txt']}; font-weight:600; font-family:'JetBrains Mono',monospace; }}
 
-/* ── KPI ── */
 .kpi-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:0.85rem; margin-bottom:1.8rem; }}
 .kpi {{ background:{T['bg_card']}; border:1px solid {T['border']}; border-radius:14px; padding:1rem 1.2rem; position:relative; overflow:hidden; }}
 .kpi::before {{ content:''; position:absolute; top:0; left:0; width:100%; height:2.5px; border-radius:14px 14px 0 0; }}
@@ -706,11 +703,9 @@ html, body, [class*="css"] {{ font-family: 'Inter', sans-serif !important; color
 .kpi.g .kpi-val {{ color:{T['green']}; }} .kpi.a .kpi-val {{ color:{T['amber']}; }}
 .kpi.b .kpi-val {{ color:{T['blue']};  }} .kpi.p .kpi-val {{ color:{T['purple']}; }}
 
-/* ── Hide sidebar ── */
 [data-testid="stSidebar"] {{ display:none !important; }}
 [data-testid="collapsedControl"] {{ display:none !important; }}
 
-/* ── Primary Run Button ── */
 button[kind="primary"], .stButton > button[kind="primary"] {{
     background:{T['btn_bg']} !important;
     color:{T['btn_txt']} !important; font-weight:800 !important; font-size:.95rem !important;
@@ -722,7 +717,6 @@ button[kind="primary"]:hover, .stButton > button[kind="primary"]:hover {{
     box-shadow:0 8px 32px rgba(0,200,100,.4) !important;
 }}
 
-/* ── Secondary / Theme Toggle Button ── */
 button[kind="secondary"], .stButton > button[kind="secondary"] {{
     background: {T['toggle_bg']} !important;
     color: {T['toggle_txt']} !important;
@@ -740,7 +734,6 @@ button[kind="secondary"]:hover, .stButton > button[kind="secondary"]:hover {{
     transform: translateY(-1px) !important;
 }}
 
-/* ── Download Button ── */
 .stDownloadButton > button {{
     background:rgba(100,181,246,.07) !important; color:{T['blue']} !important;
     border:1px solid rgba(100,181,246,.28) !important; border-radius:10px !important;
@@ -748,10 +741,8 @@ button[kind="secondary"]:hover, .stButton > button[kind="secondary"]:hover {{
 }}
 .stDownloadButton > button:hover {{ background:rgba(100,181,246,.14) !important; }}
 
-/* ── Progress ── */
 .stProgress > div > div {{ background:linear-gradient(90deg,{T['green']},#00b4ff) !important; border-radius:40px !important; }}
 
-/* ── Dataframe ── */
 [data-testid="stDataFrame"] {{ border:1px solid {T['border']} !important; border-radius:14px !important; overflow:hidden !important; }}
 [data-testid="stDataFrame"] thead th {{
     background:{T['th_bg']} !important; color:{T['th_color']} !important;
@@ -760,7 +751,6 @@ button[kind="secondary"]:hover, .stButton > button[kind="secondary"]:hover {{
 }}
 [data-testid="stDataFrame"] tbody td {{ font-family:'JetBrains Mono',monospace !important; font-size:.78rem !important; border-bottom:1px solid {T['df_row_border']} !important; }}
 
-/* ── Expander Styling (Dark & Light) ── */
 [data-testid="stExpander"] {{
     background: {T['bg_card']} !important;
     border: 1px solid {T['ctrl_border']} !important;
@@ -793,7 +783,6 @@ button[kind="secondary"]:hover, .stButton > button[kind="secondary"]:hover {{
     text-transform:uppercase; letter-spacing:1.3px; margin:0.8rem 0 .3rem;
 }}
 
-/* ── Results Banner ── */
 .rbanner {{
     background:{T['rbanner_bg']};
     border:1px solid {T['border_hero']}; border-radius:14px;
@@ -804,7 +793,6 @@ button[kind="secondary"]:hover, .stButton > button[kind="secondary"]:hover {{
 .rb-label {{ font-size:.75rem; color:{T['txt2']}; margin-top:2px; }}
 .rb-meta  {{ font-size:.7rem; color:{T['txt3']}; font-family:'JetBrains Mono',monospace; }}
 
-/* ── Legend ── */
 .legend {{ display:flex; gap:2rem; flex-wrap:wrap; align-items:center;
     padding:.85rem 1.4rem; background:{T['legend_bg']};
     border:1px solid {T['legend_border']}; border-radius:12px; margin-top:1.2rem; }}
@@ -813,7 +801,6 @@ button[kind="secondary"]:hover, .stButton > button[kind="secondary"]:hover {{
 .leg-txt  {{ font-size:.72rem; color:{T['txt2']}; }}
 .leg-tip  {{ margin-left:auto; font-size:.68rem; color:{T['txt3']}; font-style:italic; }}
 
-/* ── Idle ── */
 .idle {{ display:flex; flex-direction:column; align-items:center; justify-content:center; padding:4rem 2rem; text-align:center; }}
 .idle-ico {{ font-size:4.5rem; margin-bottom:1.2rem; animation:float 3s ease-in-out infinite; }}
 @keyframes float {{ 0%,100%{{transform:translateY(0)}} 50%{{transform:translateY(-14px)}} }}
@@ -826,9 +813,88 @@ button[kind="secondary"]:hover, .stButton > button[kind="secondary"]:hover {{
 .step-n {{ font-size:1.3rem; font-weight:800; color:{T['step_num_color']}; font-family:'JetBrains Mono',monospace; margin-bottom:.3rem; }}
 .step-t {{ font-size:.78rem; font-weight:600; color:{T['txt']}; margin-bottom:.15rem; }}
 .step-d {{ font-size:.68rem; color:{T['txt3']}; line-height:1.4; }}
-[data-testid="stSlider"] label {{ font-size:.76rem !important; color:{T['txt2']} !important; }}
+[data-testid="stSlider"] label, [data-testid="stNumberInput"] label {{ font-size:.76rem !important; color:{T['txt2']} !important; }}
 
-/* ── Mobile responsive ── */
+/* ── Radio Buttons & Mode Selector Styling ── */
+div[data-testid="stRadio"] label,
+div[data-testid="stRadio"] label p,
+div[data-testid="stRadio"] span,
+div[data-testid="stRadio"] div,
+div[role="radiogroup"] label,
+div[role="radiogroup"] label p,
+div[role="radiogroup"] span,
+div[role="radiogroup"] [data-testid="stMarkdownContainer"] p {{
+    color: {T['txt']} !important;
+    font-size: 0.95rem !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.2px !important;
+}}
+
+div[role="radiogroup"] {{
+    gap: 1.5rem !important;
+    align-items: center !important;
+}}
+
+div[data-testid="stRadio"] label:hover p,
+div[role="radiogroup"] label:hover p {{
+    color: {T['green']} !important;
+    transition: color 0.2s ease;
+}}
+
+/* ── Tabs Styling ── */
+button[data-baseweb="tab"] {{
+    background: transparent !important;
+    border: none !important;
+    padding: 0.6rem 1.2rem !important;
+}}
+button[data-baseweb="tab"] p,
+button[data-baseweb="tab"] div,
+button[data-baseweb="tab"] span {{
+    color: {T['txt2']} !important;
+    font-size: 0.95rem !important;
+    font-weight: 600 !important;
+}}
+button[data-baseweb="tab"][aria-selected="true"] p,
+button[data-baseweb="tab"][aria-selected="true"] div,
+button[data-baseweb="tab"][aria-selected="true"] span {{
+    color: {T['green']} !important;
+    font-weight: 700 !important;
+}}
+div[data-baseweb="tab-highlight"] {{
+    background-color: {T['green']} !important;
+}}
+
+/* ── Widget Labels & Text ── */
+label,
+label p,
+label span,
+[data-testid="stWidgetLabel"] p,
+[data-testid="stWidgetLabel"] label,
+[data-testid="stWidgetLabel"] span,
+.stSelectbox label p,
+.stTextInput label p,
+.stTextArea label p,
+.stNumberInput label p,
+.stSlider label p {{
+    color: {T['txt']} !important;
+    font-weight: 600 !important;
+}}
+
+/* Stock Detail Card */
+.detail-card {{
+    background: {T['bg_card']};
+    border: 1px solid {T['border']};
+    border-radius: 16px;
+    padding: 1.4rem 1.6rem;
+    margin-bottom: 1.4rem;
+}}
+.detail-title {{
+    font-size: 1.4rem;
+    font-weight: 800;
+    color: {T['txt']};
+    margin-bottom: 0.4rem;
+}}
+
 @media (max-width: 640px) {{
     .block-container, [data-testid="stMainBlockContainer"], .main .block-container {{
         max-width: 100% !important;
@@ -852,253 +918,587 @@ button[kind="secondary"]:hover, .stButton > button[kind="secondary"]:hover {{
 
 
 # ─────────────────────────────────────────────
-#  Top Nav Bar (Theme Switcher)
+#  Top Nav Bar (View Selector + Theme Switcher)
 # ─────────────────────────────────────────────
 
-top_col_space, top_col_btn = st.columns([8, 2])
+top_col_view, top_col_btn = st.columns([7, 3])
+
+with top_col_view:
+    app_view = st.radio(
+        "Scanner Mode",
+        options=["🚀 Swing Momentum (D · W · M)", "⚡ Intraday MTF (Daily · 1h · 15m)"],
+        index=0 if st.session_state.app_view == "Swing Momentum" else 1,
+        horizontal=True,
+        label_visibility="collapsed"
+    )
+    if "Swing" in app_view:
+        st.session_state.app_view = "Swing Momentum"
+    else:
+        st.session_state.app_view = "Intraday MTF"
+
 with top_col_btn:
     if st.button(f"{T['toggle_icon']} {T['toggle_label']}", key="theme_toggle", type="secondary", use_container_width=True):
         st.session_state.theme = "light" if st.session_state.theme == "dark" else "dark"
         st.rerun()
 
-# ─────────────────────────────────────────────
-#  Hero Header
-# ─────────────────────────────────────────────
 
 now_str = datetime.now().strftime("%d %b %Y, %H:%M IST")
 
-st.markdown(f"""
-<div class="hero">
-    <div class="hero-badge"><span class="pulse"></span>Live Scanner &bull; Nifty 500</div>
-    <div class="hero-title">Momentum Scanner</div>
-    <div class="hero-sub">Multi-Timeframe RSI &nbsp;&middot;&nbsp; EMA Trend Alignment &nbsp;&middot;&nbsp; ADX Strength &nbsp;&middot;&nbsp; Relative Power vs Nifty &nbsp;&middot;&nbsp; Entry Quality Score</div>
-    <div class="hero-meta">
-        <div><div class="hm-label">Universe</div><div class="hm-val">Nifty 500</div></div>
-        <div><div class="hm-label">Timeframes</div><div class="hm-val">D &bull; W &bull; M</div></div>
-        <div><div class="hm-label">Benchmark</div><div class="hm-val">Nifty 500</div></div>
-        <div><div class="hm-label">As of</div><div class="hm-val">{now_str}</div></div>
-    </div>
-</div>
-""", unsafe_allow_html=True)
 
+# =============================================================================
+#  VIEW 1: SWING MOMENTUM SCANNER (NIFTY 500)
+# =============================================================================
+if st.session_state.app_view == "Swing Momentum":
 
-# ─────────────────────────────────────────────
-#  Inline Scanner Controls (mobile-friendly)
-# ─────────────────────────────────────────────
-
-with st.expander("⚙️ Scanner Controls & Filters", expanded=True):
-    st.markdown('<div class="ctrl-section-title">&#128202; RSI Thresholds</div>', unsafe_allow_html=True)
-    col_r1, col_r2, col_r3 = st.columns(3)
-    with col_r1:
-        min_m = st.slider("Monthly RSI >=", min_value=50, max_value=75, value=60)
-    with col_r2:
-        min_w = st.slider("Weekly RSI >=",  min_value=50, max_value=75, value=60)
-    with col_r3:
-        min_d = st.slider("Daily RSI >=",   min_value=40, max_value=70, value=50)
-
-    st.markdown('<div class="ctrl-section-title">&#128200; Trend, Proximity &amp; Display</div>', unsafe_allow_html=True)
-    col_t1, col_t2, col_t3 = st.columns(3)
-    with col_t1:
-        min_adx = st.slider("ADX Minimum",       min_value=10, max_value=40, value=20)
-    with col_t2:
-        max_52w = st.slider("Max 52W Distance %", min_value=5,  max_value=25, value=10)
-    with col_t3:
-        top_n   = st.slider("Top Results",        min_value=5,  max_value=50, value=20)
-
-    st.markdown("<br>", unsafe_allow_html=True)
-    run_button = st.button("\U0001f680 Run Full Scan", use_container_width=True, type="primary")
-
-
-# ─────────────────────────────────────────────
-#  Main Content
-# ─────────────────────────────────────────────
-
-if run_button:
-    status_box     = st.empty()
-    prog_container = st.empty()
-
-    with status_box.container():
-        st.info("**Step 1/4** — Fetching Nifty 500 constituent symbols...")
-    try:
-        symbols, source = get_nifty500_symbols()
-    except Exception as e:
-        status_box.error(f"Error fetching symbols: {e}")
-        st.stop()
-
-    with status_box.container():
-        st.info(f"**Step 2/4** — Loading 3-year history for **{len(symbols)}** tickers...")
-    try:
-        data_map = download_prices(symbols)
-    except Exception as e:
-        status_box.error(f"Error downloading prices: {e}")
-        st.stop()
-
-    with status_box.container():
-        st.info("**Step 3/4** — Fetching benchmark (Nifty 500 / Nifty 50)...")
-    try:
-        benchmark = get_benchmark()
-    except Exception as e:
-        status_box.error(f"Error fetching benchmark: {e}")
-        st.stop()
-
-    with status_box.container():
-        st.info("**Step 4/4** — Computing indicators & scoring all stocks...")
-
-    rows = []
-    with prog_container:
-        progress_bar = st.progress(0.0, text="Scanning universe...")
-    total_symbols = len(data_map)
-
-    for idx, (sym, d) in enumerate(data_map.items()):
-        try:
-            row = calculate_metrics(sym, d, benchmark)
-            if row:
-                rows.append(row)
-        except Exception:
-            continue
-        pct = (idx + 1) / total_symbols
-        progress_bar.progress(pct, text=f"Scanning {sym}... ({idx+1}/{total_symbols})")
-
-    prog_container.empty()
-    status_box.empty()
-
-    raw = pd.DataFrame(rows)
-    if raw.empty:
-        st.error("No valid stock data could be calculated.")
-    else:
-        eligible = raw[
-            (raw["Monthly RSI"] >= min_m) &
-            (raw["Weekly RSI"]  >= min_w) &
-            (raw["Daily RSI"]   >= min_d) &
-            (raw["ADX"]         >= min_adx) &
-            (raw["52W Distance"] <= max_52w / 100) &
-            (raw["Hard Filter"])
-        ].copy()
-
-        if eligible.empty:
-            st.warning("No stocks passed the filter criteria. Try loosening the thresholds.")
-        else:
-            scored = score_candidates(eligible)
-            if scored.empty:
-                st.warning("No stocks passed the Risk/Reward threshold (R:R >= 1.5).")
-            else:
-                scored.insert(0, "Rank", range(1, len(scored) + 1))
-
-                n_buy       = int((scored["Action"] == "BUY").sum())
-                n_watch     = int((scored["Action"] == "WATCH / PULLBACK").sum())
-                n_watchlist = int((scored["Action"] == "WATCHLIST").sum())
-                top_score   = float(scored["Final Score"].max())
-                avg_rr      = float(scored["RR Ratio"].mean())
-                total_q     = len(scored)
-
-                st.markdown(f"""
-                <div class="kpi-grid">
-                    <div class="kpi g"><div class="kpi-ico">&#9989;</div>
-                        <div class="kpi-val">{n_buy}</div><div class="kpi-lbl">BUY Signals</div></div>
-                    <div class="kpi a"><div class="kpi-ico">&#128064;</div>
-                        <div class="kpi-val">{n_watch}</div><div class="kpi-lbl">Watch / Pullback</div></div>
-                    <div class="kpi b"><div class="kpi-ico">&#128203;</div>
-                        <div class="kpi-val">{n_watchlist}</div><div class="kpi-lbl">Watchlist</div></div>
-                    <div class="kpi p"><div class="kpi-ico">&#127942;</div>
-                        <div class="kpi-val">{top_score:.0f}</div><div class="kpi-lbl">Top Score</div></div>
-                    <div class="kpi a"><div class="kpi-ico">&#9878;&#65039;</div>
-                        <div class="kpi-val">{avg_rr:.1f}:1</div><div class="kpi-lbl">Avg R:R</div></div>
-                    <div class="kpi g"><div class="kpi-ico">&#128269;</div>
-                        <div class="kpi-val">{total_q}</div><div class="kpi-lbl">Total Qualified</div></div>
-                </div>
-                """, unsafe_allow_html=True)
-
-                display_cols = [
-                    "Rank", "Symbol", "Action", "Price",
-                    "Final Score", "Momentum Score", "Entry Score",
-                    "Monthly RSI", "Weekly RSI", "Daily RSI",
-                    "ADX", "Vol Ratio", "RR Ratio", "Risk %",
-                    "3M Return", "6M Return", "RS vs Nifty", "52W Distance",
-                    "Stop Loss", "Target 2%", "Target 5%",
-                ]
-                view = scored[display_cols].head(top_n).copy()
-                for c in ["3M Return", "6M Return", "RS vs Nifty", "52W Distance"]:
-                    view[c] = (view[c] * 100).round(2)
-
-                st.markdown(f"""
-                <div class="rbanner">
-                    <div>
-                        <div class="rb-count">{len(view)} Results</div>
-                        <div class="rb-label">Ranked by Final Score &bull; {datetime.now().strftime('%d %b %Y, %H:%M')}</div>
-                    </div>
-                    <div class="rb-meta">Source: {source} &nbsp;|&nbsp; Benchmark: Nifty 500</div>
-                </div>
-                """, unsafe_allow_html=True)
-
-                _, col_dl = st.columns([6, 1])
-                with col_dl:
-                    csv = view.to_csv(index=False).encode("utf-8")
-                    st.download_button(
-                        label="Export CSV",
-                        data=csv,
-                        file_name=f"nifty500_scan_{datetime.now().strftime('%Y-%m-%d')}.csv",
-                        mime="text/csv",
-                        use_container_width=True
-                    )
-
-                view["Symbol"] = view["Symbol"].apply(
-                    lambda s: f"https://in.tradingview.com/chart/?symbol=NSE:{s}"
-                )
-                styled_view = style_dataframe(view, theme=st.session_state.theme)
-                st.dataframe(
-                    styled_view,
-                    column_config={
-                        "Symbol": st.column_config.LinkColumn(
-                            "Symbol",
-                            help="Click to open chart on TradingView",
-                            display_text=r"https://in\.tradingview\.com/chart/\?symbol=NSE:(.*)"
-                        )
-                    },
-                    use_container_width=True,
-                    hide_index=True
-                )
-
-                st.markdown(f"""
-                <div class="legend">
-                    <div class="leg-item"><span class="leg-dot" style="background:{T['green']}"></span>
-                        <span class="leg-txt">BUY &mdash; Score &ge; 85</span></div>
-                    <div class="leg-item"><span class="leg-dot" style="background:{T['amber']}"></span>
-                        <span class="leg-txt">WATCH / PULLBACK &mdash; Score &ge; 75</span></div>
-                    <div class="leg-item"><span class="leg-dot" style="background:{T['blue']}"></span>
-                        <span class="leg-txt">WATCHLIST &mdash; Score &ge; 65</span></div>
-                    <div class="leg-item"><span class="leg-dot" style="background:{T['red']}"></span>
-                        <span class="leg-txt">AVOID &mdash; Score &lt; 65</span></div>
-                    <div class="leg-tip">Click any symbol to open TradingView chart &rarr;</div>
-                </div>
-                """, unsafe_allow_html=True)
-
-else:
     st.markdown(f"""
-    <div class="idle">
-        <div class="idle-ico">&#128200;</div>
-        <div class="idle-h">Ready to Scan the Market</div>
-        <div class="idle-p">
-            Expand the <strong style="color:{T['txt']};">Scanner Controls</strong> above,
-            tune your filters, then hit <strong style="color:{T['green']};">&#128640; Run Full Scan</strong>
-            to identify momentum breakout candidates across the entire Nifty 500 universe.
-        </div>
-        <div class="idle-steps">
-            <div class="step">
-                <div class="step-n">01</div><div class="step-t">Set Filters</div>
-                <div class="step-d">Tune RSI, ADX &amp; 52W distance thresholds</div>
-            </div>
-            <div class="step">
-                <div class="step-n">02</div><div class="step-t">Run Scan</div>
-                <div class="step-d">All 500 stocks analysed in real-time</div>
-            </div>
-            <div class="step">
-                <div class="step-n">03</div><div class="step-t">Review Signals</div>
-                <div class="step-d">BUY &bull; WATCH &bull; AVOID action ratings</div>
-            </div>
-            <div class="step">
-                <div class="step-n">04</div><div class="step-t">Open Charts</div>
-                <div class="step-d">One-click TradingView deep links</div>
-            </div>
+    <div class="hero">
+        <div class="hero-badge"><span class="pulse"></span>Live Scanner &bull; Nifty 500 Swing</div>
+        <div class="hero-title">Momentum Scanner</div>
+        <div class="hero-sub">Multi-Timeframe RSI &nbsp;&middot;&nbsp; EMA Trend Alignment &nbsp;&middot;&nbsp; ADX Strength &nbsp;&middot;&nbsp; Relative Power vs Nifty &nbsp;&middot;&nbsp; Entry Quality Score</div>
+        <div class="hero-meta">
+            <div><div class="hm-label">Universe</div><div class="hm-val">Nifty 500</div></div>
+            <div><div class="hm-label">Timeframes</div><div class="hm-val">Daily &bull; Weekly &bull; Monthly</div></div>
+            <div><div class="hm-label">Benchmark</div><div class="hm-val">Nifty 500 (^CRSLDX)</div></div>
+            <div><div class="hm-label">As of</div><div class="hm-val">{now_str}</div></div>
         </div>
     </div>
     """, unsafe_allow_html=True)
+
+    with st.expander("⚙️ Swing Scanner Controls & Filters", expanded=True):
+        st.markdown('<div class="ctrl-section-title">&#128202; RSI Thresholds</div>', unsafe_allow_html=True)
+        col_r1, col_r2, col_r3 = st.columns(3)
+        with col_r1:
+            min_m = st.slider("Monthly RSI >=", min_value=50, max_value=75, value=60)
+        with col_r2:
+            min_w = st.slider("Weekly RSI >=",  min_value=50, max_value=75, value=60)
+        with col_r3:
+            min_d = st.slider("Daily RSI >=",   min_value=40, max_value=70, value=50)
+
+        st.markdown('<div class="ctrl-section-title">&#128200; Trend, Proximity &amp; Display</div>', unsafe_allow_html=True)
+        col_t1, col_t2, col_t3 = st.columns(3)
+        with col_t1:
+            min_adx = st.slider("ADX Minimum",       min_value=10, max_value=40, value=20)
+        with col_t2:
+            max_52w = st.slider("Max 52W Distance %", min_value=5,  max_value=25, value=10)
+        with col_t3:
+            top_n   = st.slider("Top Results",        min_value=5,  max_value=50, value=20)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        run_button = st.button("🚀 Run Full Swing Scan", use_container_width=True, type="primary")
+
+    if run_button:
+        status_box     = st.empty()
+        prog_container = st.empty()
+
+        with status_box.container():
+            st.info("**Step 1/4** — Fetching Nifty 500 constituent symbols...")
+        try:
+            symbols, source = get_nifty500_symbols()
+        except Exception as e:
+            status_box.error(f"Error fetching symbols: {e}")
+            st.stop()
+
+        with status_box.container():
+            st.info(f"**Step 2/4** — Loading 3-year history for **{len(symbols)}** tickers...")
+        try:
+            data_map = download_prices(symbols)
+        except Exception as e:
+            status_box.error(f"Error downloading prices: {e}")
+            st.stop()
+
+        with status_box.container():
+            st.info("**Step 3/4** — Fetching benchmark (Nifty 500 / Nifty 50)...")
+        try:
+            benchmark = get_benchmark()
+        except Exception as e:
+            status_box.error(f"Error fetching benchmark: {e}")
+            st.stop()
+
+        with status_box.container():
+            st.info("**Step 4/4** — Computing indicators & scoring all stocks...")
+
+        rows = []
+        with prog_container:
+            progress_bar = st.progress(0.0, text="Scanning universe...")
+        total_symbols = len(data_map)
+
+        for idx, (sym, d) in enumerate(data_map.items()):
+            try:
+                row = calculate_metrics(sym, d, benchmark)
+                if row:
+                    rows.append(row)
+            except Exception:
+                continue
+            pct = (idx + 1) / total_symbols
+            progress_bar.progress(pct, text=f"Scanning {sym}... ({idx+1}/{total_symbols})")
+
+        prog_container.empty()
+        status_box.empty()
+
+        raw = pd.DataFrame(rows)
+        if raw.empty:
+            st.error("No valid stock data could be calculated.")
+        else:
+            eligible = raw[
+                (raw["Monthly RSI"] >= min_m) &
+                (raw["Weekly RSI"]  >= min_w) &
+                (raw["Daily RSI"]   >= min_d) &
+                (raw["ADX"]         >= min_adx) &
+                (raw["52W Distance"] <= max_52w / 100) &
+                (raw["Hard Filter"])
+            ].copy()
+
+            if eligible.empty:
+                st.warning("No stocks passed the filter criteria. Try loosening the thresholds.")
+            else:
+                scored = score_candidates(eligible)
+                if scored.empty:
+                    st.warning("No stocks passed the Risk/Reward threshold (R:R >= 1.5).")
+                else:
+                    scored.insert(0, "Rank", range(1, len(scored) + 1))
+                    st.session_state.swing_results = scored
+
+                    n_buy       = int((scored["Action"] == "BUY").sum())
+                    n_watch     = int((scored["Action"] == "WATCH / PULLBACK").sum())
+                    n_watchlist = int((scored["Action"] == "WATCHLIST").sum())
+                    top_score   = float(scored["Final Score"].max())
+                    avg_rr      = float(scored["RR Ratio"].mean())
+                    total_q     = len(scored)
+
+                    st.markdown(f"""
+                    <div class="kpi-grid">
+                        <div class="kpi g"><div class="kpi-ico">&#9989;</div>
+                            <div class="kpi-val">{n_buy}</div><div class="kpi-lbl">BUY Signals</div></div>
+                        <div class="kpi a"><div class="kpi-ico">&#128064;</div>
+                            <div class="kpi-val">{n_watch}</div><div class="kpi-lbl">Watch / Pullback</div></div>
+                        <div class="kpi b"><div class="kpi-ico">&#128203;</div>
+                            <div class="kpi-val">{n_watchlist}</div><div class="kpi-lbl">Watchlist</div></div>
+                        <div class="kpi p"><div class="kpi-ico">&#127942;</div>
+                            <div class="kpi-val">{top_score:.0f}</div><div class="kpi-lbl">Top Score</div></div>
+                        <div class="kpi a"><div class="kpi-ico">&#9878;&#65039;</div>
+                            <div class="kpi-val">{avg_rr:.1f}:1</div><div class="kpi-lbl">Avg R:R</div></div>
+                        <div class="kpi g"><div class="kpi-ico">&#128269;</div>
+                            <div class="kpi-val">{total_q}</div><div class="kpi-lbl">Total Qualified</div></div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    display_cols = [
+                        "Rank", "Symbol", "Action", "Price",
+                        "Final Score", "Momentum Score", "Entry Score",
+                        "Monthly RSI", "Weekly RSI", "Daily RSI",
+                        "ADX", "Vol Ratio", "RR Ratio", "Risk %",
+                        "3M Return", "6M Return", "RS vs Nifty", "52W Distance",
+                        "Stop Loss", "Target 2%", "Target 5%",
+                    ]
+                    view = scored[display_cols].head(top_n).copy()
+                    for c in ["3M Return", "6M Return", "RS vs Nifty", "52W Distance"]:
+                        view[c] = (view[c] * 100).round(2)
+
+                    st.markdown(f"""
+                    <div class="rbanner">
+                        <div>
+                            <div class="rb-count">{len(view)} Results</div>
+                            <div class="rb-label">Ranked by Final Score &bull; {datetime.now().strftime('%d %b %Y, %H:%M')}</div>
+                        </div>
+                        <div class="rb-meta">Source: {source} &nbsp;|&nbsp; Benchmark: Nifty 500</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    _, col_dl = st.columns([6, 1])
+                    with col_dl:
+                        csv = view.to_csv(index=False).encode("utf-8")
+                        st.download_button(
+                            label="Export CSV",
+                            data=csv,
+                            file_name=f"nifty500_swing_scan_{datetime.now().strftime('%Y-%m-%d')}.csv",
+                            mime="text/csv",
+                            use_container_width=True
+                        )
+
+                    view["Symbol"] = view["Symbol"].apply(
+                        lambda s: f"https://in.tradingview.com/chart/?symbol=NSE:{s}"
+                    )
+                    styled_view = style_dataframe(view, theme=st.session_state.theme)
+                    st.dataframe(
+                        styled_view,
+                        column_config={
+                            "Symbol": st.column_config.LinkColumn(
+                                "Symbol",
+                                help="Click to open chart on TradingView",
+                                display_text=r"https://in\.tradingview\.com/chart/\?symbol=NSE:(.*)"
+                            )
+                        },
+                        use_container_width=True,
+                        hide_index=True
+                    )
+
+                    st.markdown(f"""
+                    <div class="legend">
+                        <div class="leg-item"><span class="leg-dot" style="background:{T['green']}"></span>
+                            <span class="leg-txt">BUY &mdash; Score &ge; 85</span></div>
+                        <div class="leg-item"><span class="leg-dot" style="background:{T['amber']}"></span>
+                            <span class="leg-txt">WATCH / PULLBACK &mdash; Score &ge; 75</span></div>
+                        <div class="leg-item"><span class="leg-dot" style="background:{T['blue']}"></span>
+                            <span class="leg-txt">WATCHLIST &mdash; Score &ge; 65</span></div>
+                        <div class="leg-item"><span class="leg-dot" style="background:{T['red']}"></span>
+                            <span class="leg-txt">AVOID &mdash; Score &lt; 65</span></div>
+                        <div class="leg-tip">Click any symbol to open TradingView chart &rarr;</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+    else:
+        st.markdown(f"""
+        <div class="idle">
+            <div class="idle-ico">&#128200;</div>
+            <div class="idle-h">Ready to Scan the Market</div>
+            <div class="idle-p">
+                Expand the <strong style="color:{T['txt']};">Swing Scanner Controls</strong> above,
+                tune your filters, then hit <strong style="color:{T['green']};">&#128640; Run Full Swing Scan</strong>
+                to identify momentum breakout setups across all 500 Nifty constituents.
+            </div>
+            <div class="idle-steps">
+                <div class="step">
+                    <div class="step-n">01</div><div class="step-t">Set Filters</div>
+                    <div class="step-d">Tune RSI, ADX &amp; 52W distance thresholds</div>
+                </div>
+                <div class="step">
+                    <div class="step-n">02</div><div class="step-t">Run Scan</div>
+                    <div class="step-d">All 500 stocks analysed in real-time</div>
+                </div>
+                <div class="step">
+                    <div class="step-n">03</div><div class="step-t">Review Signals</div>
+                    <div class="step-d">BUY &bull; WATCH &bull; AVOID action ratings</div>
+                </div>
+                <div class="step">
+                    <div class="step-n">04</div><div class="step-t">Open Charts</div>
+                    <div class="step-d">One-click TradingView deep links</div>
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+
+# =============================================================================
+#  VIEW 2: INTRADAY MULTI-TIMEFRAME (MTF) SCANNER
+# =============================================================================
+else:
+
+    st.markdown(f"""
+    <div class="hero">
+        <div class="hero-badge"><span class="pulse"></span>Live Intraday MTF Engine</div>
+        <div class="hero-title">Intraday MTF Scanner</div>
+        <div class="hero-sub">Daily Trend Alignment &nbsp;&middot;&nbsp; Hourly Confirmation &nbsp;&middot;&nbsp; 15-Minute VWAP &amp; Breakout Triggers &nbsp;&middot;&nbsp; Dynamic Position Sizing</div>
+        <div class="hero-meta">
+            <div><div class="hm-label">Alignment</div><div class="hm-val">Daily &rarr; 1h &rarr; 15m</div></div>
+            <div><div class="hm-label">Execution</div><div class="hm-val">VWAP &bull; EMA 9/20 &bull; ATR Stop</div></div>
+            <div><div class="hm-label">Targets</div><div class="hm-val">+1.0% &bull; +2.0%</div></div>
+            <div><div class="hm-label">As of</div><div class="hm-val">{now_str}</div></div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    tab_scan, tab_detail = st.tabs(["🔥 Intraday Scanner", "🔍 Stock Deep-Dive & Charts"])
+
+    with tab_scan:
+        with st.expander("⚙️ Intraday Scanner Controls & Risk Parameters", expanded=True):
+            st.markdown('<div class="ctrl-section-title">&#128394; Stock Universe Selection</div>', unsafe_allow_html=True)
+            u_mode = st.radio(
+                "Universe Source",
+                ["Preset Index/Sector", "Custom Symbols (Comma-separated)", "Top Candidates from Swing Scan"],
+                horizontal=True,
+                label_visibility="collapsed"
+            )
+
+            if u_mode == "Preset Index/Sector":
+                preset_name = st.selectbox("Select Preset Universe", list(PRESET_UNIVERSES.keys()))
+                universe_symbols = PRESET_UNIVERSES[preset_name]
+                st.caption(f"Symbols ({len(universe_symbols)}): {', '.join(universe_symbols)}")
+            elif u_mode == "Top Candidates from Swing Scan":
+                if "swing_results" in st.session_state and not st.session_state.swing_results.empty:
+                    top_swing_syms = st.session_state.swing_results["Symbol"].head(25).tolist()
+                    universe_symbols = top_swing_syms
+                    st.success(f"Loaded {len(universe_symbols)} high-momentum candidates from your previous Swing scan!")
+                else:
+                    st.warning("No Swing scan has been run in this session yet. Falling back to Nifty 50 Liquid Top.")
+                    universe_symbols = PRESET_UNIVERSES["Nifty 50 Liquid Top"]
+            else:
+                custom_input = st.text_area(
+                    "NSE Symbols (comma-separated)",
+                    "RELIANCE, SBIN, ICICIBANK, HDFCBANK, BHARTIARTL, TCS, INFY, LT, TRENT, HAL, BEL, MCX"
+                )
+                universe_symbols = [s.strip().upper() for s in custom_input.split(",") if s.strip()]
+
+            st.markdown('<div class="ctrl-section-title">&#128202; Technical Filters &amp; Thresholds</div>', unsafe_allow_html=True)
+            c_r1, c_r2, c_r3, c_r4 = st.columns(4)
+            with c_r1:
+                intra_d_rsi = st.number_input("Daily RSI Min", min_value=40, max_value=75, value=55)
+            with c_r2:
+                intra_h_rsi = st.number_input("Hourly RSI Min", min_value=40, max_value=75, value=55)
+            with c_r3:
+                intra_m_rsi = st.number_input("15m RSI Min", min_value=40, max_value=70, value=50)
+            with c_r4:
+                intra_vol_mult = st.number_input("15m Volume Multiplier", min_value=0.5, max_value=4.0, value=1.5, step=0.1)
+
+            st.markdown('<div class="ctrl-section-title">&#128176; Capital &amp; Risk Management (Position Sizing)</div>', unsafe_allow_html=True)
+            c_k1, c_k2, c_k3 = st.columns(3)
+            with c_k1:
+                trade_capital = st.number_input("Trading Capital (₹)", min_value=5000, max_value=50000000, value=100000, step=10000)
+            with c_k2:
+                risk_pct = st.number_input("Risk per Trade (%)", min_value=0.1, max_value=3.0, value=0.5, step=0.1)
+            with c_k3:
+                atr_mult = st.number_input("Stop ATR Multiplier", min_value=0.5, max_value=3.0, value=1.5, step=0.1)
+
+            st.markdown("<br>", unsafe_allow_html=True)
+            run_intra_button = st.button("⚡ Run Intraday MTF Scan", use_container_width=True, type="primary")
+
+        if run_intra_button:
+            if not universe_symbols:
+                st.error("Universe is empty. Please enter or select symbols.")
+            else:
+                prog_box = st.empty()
+                with prog_box:
+                    prog_bar = st.progress(0.0, text="Fetching Multi-Timeframe Intraday Data...")
+
+                def update_progress(curr, total, symbol):
+                    pct = curr / total
+                    prog_bar.progress(pct, text=f"Analyzing {symbol} (Daily · 1h · 15m) ... ({curr}/{total})")
+
+                results_df = scan_intraday_universe(
+                    symbols=universe_symbols,
+                    daily_rsi_min=intra_d_rsi,
+                    hourly_rsi_min=intra_h_rsi,
+                    m15_rsi_min=intra_m_rsi,
+                    volume_multiplier=intra_vol_mult,
+                    atr_multiplier=atr_mult,
+                    progress_callback=update_progress
+                )
+                prog_box.empty()
+
+                if results_df.empty:
+                    st.warning("No stocks passed the intraday filters or sufficient data is unavailable for selected symbols.")
+                else:
+                    results_df["Quantity"] = results_df.apply(
+                        lambda r: calculate_position_size(trade_capital, risk_pct, r["Price"], r["Stop_Loss"]),
+                        axis=1
+                    )
+                    st.session_state.intraday_results = results_df
+
+                    n_strong = int((results_df["Signal"] == "STRONG BUY CANDIDATE").sum())
+                    n_conf   = int((results_df["Signal"] == "BUY ON CONFIRMATION").sum())
+                    n_watch  = int((results_df["Signal"] == "WATCH").sum())
+                    top_score = float(results_df["Score"].max())
+                    avg_rr = float(results_df["RR_Ratio"].mean())
+                    total_scanned = len(results_df)
+
+                    st.markdown(f"""
+                    <div class="kpi-grid">
+                        <div class="kpi g"><div class="kpi-ico">&#9989;</div>
+                            <div class="kpi-val">{n_strong}</div><div class="kpi-lbl">Strong Buy</div></div>
+                        <div class="kpi a"><div class="kpi-ico">&#9889;</div>
+                            <div class="kpi-val">{n_conf}</div><div class="kpi-lbl">Buy Confirmation</div></div>
+                        <div class="kpi b"><div class="kpi-ico">&#128064;</div>
+                            <div class="kpi-val">{n_watch}</div><div class="kpi-lbl">Watch</div></div>
+                        <div class="kpi p"><div class="kpi-ico">&#127942;</div>
+                            <div class="kpi-val">{top_score:.0f}</div><div class="kpi-lbl">Top Score</div></div>
+                        <div class="kpi a"><div class="kpi-ico">&#9878;&#65039;</div>
+                            <div class="kpi-val">{avg_rr:.1f}:1</div><div class="kpi-lbl">Avg R:R</div></div>
+                        <div class="kpi g"><div class="kpi-ico">&#128269;</div>
+                            <div class="kpi-val">{total_scanned}</div><div class="kpi-lbl">Total Scanned</div></div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    st.markdown(f"""
+                    <div class="rbanner">
+                        <div>
+                            <div class="rb-count">{len(results_df)} Candidates Evaluated</div>
+                            <div class="rb-label">Ranked by Signal &amp; Intraday Score &bull; {datetime.now().strftime('%d %b %Y, %H:%M')}</div>
+                        </div>
+                        <div class="rb-meta">Risk: {risk_pct}% of ₹{trade_capital:,.0f} (₹{trade_capital*risk_pct/100:,.0f} per trade)</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    cols_display = [
+                        "Rank", "Symbol", "Signal", "Setup", "Score",
+                        "Price", "VWAP", "Daily_RSI", "Hourly_RSI", "M15_RSI",
+                        "Volume_Ratio", "Stop_Loss", "Target_1", "Target_2",
+                        "RR_Ratio", "Quantity"
+                    ]
+
+                    view_intra = results_df[cols_display].copy()
+
+                    _, col_dl = st.columns([6, 1])
+                    with col_dl:
+                        csv = view_intra.to_csv(index=False).encode("utf-8")
+                        st.download_button(
+                            label="Export CSV",
+                            data=csv,
+                            file_name=f"intraday_mtf_signals_{datetime.now().strftime('%Y-%m-%d')}.csv",
+                            mime="text/csv",
+                            use_container_width=True
+                        )
+
+                    view_intra["Symbol"] = view_intra["Symbol"].apply(
+                        lambda s: f"https://in.tradingview.com/chart/?symbol=NSE:{s}"
+                    )
+
+                    styled_intra = style_intraday_dataframe(view_intra, theme=st.session_state.theme)
+                    st.dataframe(
+                        styled_intra,
+                        column_config={
+                            "Symbol": st.column_config.LinkColumn(
+                                "Symbol",
+                                help="Click to open 15m chart on TradingView",
+                                display_text=r"https://in\.tradingview\.com/chart/\?symbol=NSE:(.*)"
+                            ),
+                            "Signal": st.column_config.TextColumn("Signal", width="medium"),
+                            "Setup": st.column_config.TextColumn("Setup", width="small"),
+                        },
+                        use_container_width=True,
+                        hide_index=True
+                    )
+
+                    st.markdown(f"""
+                    <div class="legend">
+                        <div class="leg-item"><span class="leg-dot" style="background:{T['green']}"></span>
+                            <span class="leg-txt">STRONG BUY &mdash; Hard Pass &amp; Score &ge; 85</span></div>
+                        <div class="leg-item"><span class="leg-dot" style="background:#0f766e"></span>
+                            <span class="leg-txt">BUY ON CONFIRMATION &mdash; Hard Pass &amp; Score &ge; 75</span></div>
+                        <div class="leg-item"><span class="leg-dot" style="background:{T['amber']}"></span>
+                            <span class="leg-txt">WATCH &mdash; Score &ge; 65</span></div>
+                        <div class="leg-item"><span class="leg-dot" style="background:{T['purple']}"></span>
+                            <span class="leg-txt">Setups: BREAKOUT &bull; VWAP MOMENTUM &bull; PULLBACK / RECLAIM</span></div>
+                        <div class="leg-tip">Click any symbol to open TradingView live chart &rarr;</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+        elif "intraday_results" in st.session_state and not st.session_state.intraday_results.empty:
+            res_saved = st.session_state.intraday_results
+            st.info("Displaying previously scanned Intraday results. Hit 'Run Intraday MTF Scan' to refresh.")
+            cols_display = [
+                "Rank", "Symbol", "Signal", "Setup", "Score",
+                "Price", "VWAP", "Daily_RSI", "Hourly_RSI", "M15_RSI",
+                "Volume_Ratio", "Stop_Loss", "Target_1", "Target_2",
+                "RR_Ratio", "Quantity"
+            ]
+            view_saved = res_saved[cols_display].copy()
+            view_saved["Symbol"] = view_saved["Symbol"].apply(
+                lambda s: f"https://in.tradingview.com/chart/?symbol=NSE:{s}"
+            )
+            styled_saved = style_intraday_dataframe(view_saved, theme=st.session_state.theme)
+            st.dataframe(
+                styled_saved,
+                column_config={
+                    "Symbol": st.column_config.LinkColumn(
+                        "Symbol",
+                        help="Click to open chart on TradingView",
+                        display_text=r"https://in\.tradingview\.com/chart/\?symbol=NSE:(.*)"
+                    )
+                },
+                use_container_width=True,
+                hide_index=True
+            )
+        else:
+            st.markdown(f"""
+            <div class="idle">
+                <div class="idle-ico">&#9889;</div>
+                <div class="idle-h">Intraday MTF Engine Ready</div>
+                <div class="idle-p">
+                    Select your preferred stock universe (Presets, Custom, or Swing shortlist),
+                    tune intraday parameters, and click <strong style="color:{T['green']};">&#9889; Run Intraday MTF Scan</strong>
+                    to identify real-time 15m breakout &amp; VWAP momentum triggers.
+                </div>
+                <div class="idle-steps">
+                    <div class="step">
+                        <div class="step-n">01</div><div class="step-t">Pick Universe</div>
+                        <div class="step-d">Nifty 50, F&amp;O Beta, or custom list</div>
+                    </div>
+                    <div class="step">
+                        <div class="step-n">02</div><div class="step-t">MTF Align</div>
+                        <div class="step-d">Daily + Hourly + 15-Minute sync</div>
+                    </div>
+                    <div class="step">
+                        <div class="step-n">03</div><div class="step-t">VWAP Triggers</div>
+                        <div class="step-d">Breakout &amp; volume expansion</div>
+                    </div>
+                    <div class="step">
+                        <div class="step-n">04</div><div class="step-t">Risk Sizing</div>
+                        <div class="step-d">Auto ATR stop &amp; position size</div>
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    # ── Intraday Stock Deep-Dive Tab ──
+    with tab_detail:
+        available_syms = universe_symbols if 'universe_symbols' in locals() and universe_symbols else PRESET_UNIVERSES["Nifty 50 Liquid Top"]
+        selected_stock = st.selectbox("Select Stock for Deep-Dive Analysis", available_syms)
+
+        col_d_act, col_d_cap = st.columns([2, 2])
+        with col_d_act:
+            analyze_btn = st.button("📊 Analyze Stock Details", type="primary", use_container_width=True)
+
+        if analyze_btn or selected_stock:
+            with st.spinner(f"Fetching real-time multi-timeframe data for {selected_stock}..."):
+                d_df, h_df, m_df = download_intraday_timeframes(selected_stock)
+
+            if min(len(d_df), len(h_df), len(m_df)) < 30:
+                st.error(f"Insufficient historical or intraday data available for {selected_stock}.NS")
+            else:
+                stock_sig = evaluate_stock_intraday(
+                    selected_stock,
+                    daily_rsi_min=intra_d_rsi if 'intra_d_rsi' in locals() else 55,
+                    hourly_rsi_min=intra_h_rsi if 'intra_h_rsi' in locals() else 55,
+                    m15_rsi_min=intra_m_rsi if 'intra_m_rsi' in locals() else 50,
+                    volume_multiplier=intra_vol_mult if 'intra_vol_mult' in locals() else 1.5,
+                    atr_multiplier=atr_mult if 'atr_mult' in locals() else 1.5,
+                    d_df=d_df, h_df=h_df, m_df=m_df
+                )
+
+                if stock_sig:
+                    # Metric cards
+                    mc1, mc2, mc3, mc4, mc5 = st.columns(5)
+                    mc1.metric("Intraday Score", f"{stock_sig['Score']:.0f}/100")
+                    mc2.metric("Signal", stock_sig["Signal"])
+                    mc3.metric("Setup", stock_sig["Setup"])
+                    mc4.metric("Current Price", f"₹{stock_sig['Price']:.2f}")
+                    mc5.metric("Intraday VWAP", f"₹{stock_sig['VWAP']:.2f}")
+
+                    rc1, rc2, rc3, rc4 = st.columns(4)
+                    rc1.metric("Daily RSI", f"{stock_sig['Daily_RSI']:.1f}", "Trend: " + ("Bullish" if stock_sig["Daily_Trend"] else "Neutral"))
+                    rc2.metric("Hourly RSI", f"{stock_sig['Hourly_RSI']:.1f}", "Trend: " + ("Bullish" if stock_sig["Hourly_Trend"] else "Neutral"))
+                    rc3.metric("15m RSI", f"{stock_sig['M15_RSI']:.1f}", "Trend: " + ("Bullish" if stock_sig["M15_Trend"] else "Neutral"))
+                    rc4.metric("15m Vol Ratio", f"{stock_sig['Volume_Ratio']:.2f}x")
+
+                    # Position size calculation
+                    c_cap = trade_capital if 'trade_capital' in locals() else 100000
+                    c_risk = risk_pct if 'risk_pct' in locals() else 0.5
+                    pos_qty = calculate_position_size(c_cap, c_risk, stock_sig["Price"], stock_sig["Stop_Loss"])
+                    max_loss = pos_qty * (stock_sig["Price"] - stock_sig["Stop_Loss"])
+                    total_exposure = pos_qty * stock_sig["Price"]
+
+                    st.markdown(f"""
+                    <div class="detail-card">
+                        <div class="detail-title">🛡️ Risk &amp; Execution Plan &mdash; {selected_stock}</div>
+                        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:1rem; margin-top:0.8rem;">
+                            <div><div class="hm-label">Stop Loss</div><div class="hm-val" style="color:{T['red']};">₹{stock_sig['Stop_Loss']:.2f}</div></div>
+                            <div><div class="hm-label">Target 1 (+1%)</div><div class="hm-val" style="color:{T['green']};">₹{stock_sig['Target_1']:.2f}</div></div>
+                            <div><div class="hm-label">Target 2 (+2%)</div><div class="hm-val" style="color:{T['green']};">₹{stock_sig['Target_2']:.2f}</div></div>
+                            <div><div class="hm-label">R:R Ratio</div><div class="hm-val">{stock_sig['RR_Ratio']:.2f}:1</div></div>
+                            <div><div class="hm-label">Suggested Qty</div><div class="hm-val" style="color:{T['blue']}; font-size:1.1rem;">{pos_qty} shares</div></div>
+                            <div><div class="hm-label">Capital at Risk</div><div class="hm-val">₹{max_loss:,.2f}</div></div>
+                            <div><div class="hm-label">Total Trade Value</div><div class="hm-val">₹{total_exposure:,.2f}</div></div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    # 15-minute Price & VWAP Chart
+                    st.markdown(f"#### 📈 15-Minute Price Action vs VWAP ({selected_stock})")
+                    m_recent = m_df.tail(75).copy()
+                    m_recent["VWAP"] = intraday_vwap(m_recent)
+                    m_recent["EMA9"] = intraday_ema(m_recent["Close"], 9)
+                    m_recent["EMA20"] = intraday_ema(m_recent["Close"], 20)
+
+                    chart_data = m_recent[["Close", "VWAP", "EMA9", "EMA20"]]
+                    st.line_chart(chart_data)
+
+                    st.markdown(f"[🔗 Open Full Interactive Chart on TradingView](https://in.tradingview.com/chart/?symbol=NSE:{selected_stock})")

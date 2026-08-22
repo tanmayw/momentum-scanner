@@ -1,6 +1,6 @@
-# Nifty 500 Scanner — Task History
+# Nifty Momentum & Intraday Scanner — Task History
 
-**Version**: 2.3.0 | **Last Updated**: 2026-08-22
+**Version**: 2.4.0 | **Last Updated**: 2026-08-22
 
 ---
 
@@ -74,6 +74,26 @@
   - **Dark mode**: Vibrant neon accents (`#00ff88`, `#ffb800`, `#64b5f6`, `#ff5252`).
   - **Light mode**: Deep, high-contrast, eye-friendly tones (Emerald `#15803d`, Bronze `#b45309`, Indigo `#1d4ed8`, Crimson `#b91c1c`, Slate `#0f172a`).
 - [x] 7.4 Replaced all hardcoded dark hex colors in Markdown, Idle state, and Legends with dynamic theme variables.
+
+---
+
+## Phase 8: Intraday Multi-Timeframe (MTF) Scanner Integration ✅
+
+- [x] 8.1 Created `intraday_scanner.py` modular calculation engine:
+  - Multi-timeframe data fetcher (Daily 2y, Hourly 60d, 15m 30d).
+  - Intraday technical indicators: Wilder's RSI, EMA 9/20/50, Daily session VWAP, ATR, Volume Ratio.
+  - Composite Intraday Score (0–100 pts) and Signal categorization (`STRONG BUY`, `BUY ON CONFIRMATION`, `WATCH`, `NO TRADE`).
+  - Setup tag classification (`BREAKOUT`, `VWAP MOMENTUM`, `PULLBACK / RECLAIM`, `WAIT`).
+  - Fixed-fractional position sizing calculator based on capital and 15m ATR stop loss.
+  - Preset stock universes (Nifty 50 Liquid, High Momentum/Beta F&O, Bank/Fin, IT/Tech, Auto/Metals).
+- [x] 8.2 Integrated Dual-Mode view switcher into top navigation bar of `streamlit_app.py`:
+  - `🚀 Swing Momentum (D · W · M)`
+  - `⚡ Intraday MTF (Daily · 1h · 15m)`
+- [x] 8.3 Built Intraday UI with 2 tabs:
+  - **🔥 Intraday Scanner**: Preset & custom universe selector, handoff from swing scan, technical & risk controls, 6 Intraday KPI cards, styled data table with TradingView links, CSV export.
+  - **🔍 Stock Deep-Dive & Charts**: Interactive ticker selector, metric cards, risk & execution plan card, 15-minute price vs VWAP/EMA line charts.
+- [x] 8.4 Created automated unit tests in `scratch/test_intraday_engine.py` and live scan validation script in `scratch/test_live_intraday_scan.py`.
+- [x] 8.5 Updated `README.md`, `.specify/constitution.md`, `.specify/spec.md`, `.specify/plan.md`, and `.specify/tasks.md`.
 
 ---
 
