@@ -602,13 +602,30 @@ st.markdown(f"""
 html, body, [class*="css"] {{ font-family: 'Inter', sans-serif !important; color: {T['txt']} !important; }}
 .stApp {{ background: {T['app_bg']} !important; }}
 #MainMenu, footer, header {{ visibility: hidden; }}
-.block-container {{ padding-top: 1.2rem !important; }}
+
+/* ── Container Layout (Desktop & Mobile) ── */
+.block-container, [data-testid="stMainBlockContainer"], .main .block-container {{
+    max-width: 1040px !important;
+    margin: 0 auto !important;
+    padding-top: 1.2rem !important;
+    padding-bottom: 3rem !important;
+    padding-left: 1.5rem !important;
+    padding-right: 1.5rem !important;
+}}
+
+/* ── Top Bar ── */
+.top-nav {{
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    margin-bottom: 0.6rem;
+}}
 
 /* ── Hero ── */
 .hero {{
     background: {T['hero_bg']};
     border: 1px solid {T['border_hero']}; border-radius: 20px;
-    padding: 2.5rem 3rem; margin-bottom: 2rem; position: relative; overflow: hidden;
+    padding: 2.2rem 2.5rem; margin-bottom: 1.6rem; position: relative; overflow: hidden;
 }}
 .hero::before {{
     content:''; position:absolute; inset:0;
@@ -621,49 +638,69 @@ html, body, [class*="css"] {{ font-family: 'Inter', sans-serif !important; color
     background:rgba(0,200,100,0.09); border:1px solid rgba(0,200,100,0.3);
     border-radius:40px; padding:4px 14px;
     font-size:0.68rem; font-weight:600; color:{T['green']};
-    letter-spacing:1.5px; text-transform:uppercase; margin-bottom:1rem;
+    letter-spacing:1.5px; text-transform:uppercase; margin-bottom:0.8rem;
 }}
 .pulse {{ width:7px; height:7px; border-radius:50%; background:{T['green']};
     animation:blink 2s ease-in-out infinite; }}
 @keyframes blink {{ 0%,100%{{opacity:1;transform:scale(1)}} 50%{{opacity:.3;transform:scale(.65)}} }}
 .hero-title {{
-    font-size:2.9rem; font-weight:900; line-height:1.05;
-    letter-spacing:-1.5px; margin-bottom:.7rem;
+    font-size:2.5rem; font-weight:900; line-height:1.1;
+    letter-spacing:-1.2px; margin-bottom:.5rem;
     background:{T['title_grad']};
     -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
 }}
-.hero-sub {{ font-size:1rem; color:{T['txt2']}; line-height:1.5; }}
-.hero-meta {{ display:flex; gap:2.5rem; margin-top:1.6rem; flex-wrap:wrap; }}
+.hero-sub {{ font-size:0.92rem; color:{T['txt2']}; line-height:1.5; }}
+.hero-meta {{ display:flex; gap:2.2rem; margin-top:1.4rem; flex-wrap:wrap; }}
 .hm-label {{ font-size:.62rem; color:{T['txt3']}; text-transform:uppercase; letter-spacing:1.2px; margin-bottom:2px; font-weight:600; }}
-.hm-val   {{ font-size:.9rem; color:{T['txt']}; font-weight:600; font-family:'JetBrains Mono',monospace; }}
+.hm-val   {{ font-size:.88rem; color:{T['txt']}; font-weight:600; font-family:'JetBrains Mono',monospace; }}
 
 /* ── KPI ── */
-.kpi-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(145px,1fr)); gap:1rem; margin-bottom:2rem; }}
-.kpi {{ background:{T['bg_card']}; border:1px solid {T['border']}; border-radius:14px; padding:1.1rem 1.3rem; position:relative; overflow:hidden; }}
+.kpi-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:0.85rem; margin-bottom:1.8rem; }}
+.kpi {{ background:{T['bg_card']}; border:1px solid {T['border']}; border-radius:14px; padding:1rem 1.2rem; position:relative; overflow:hidden; }}
 .kpi::before {{ content:''; position:absolute; top:0; left:0; width:100%; height:2.5px; border-radius:14px 14px 0 0; }}
 .kpi.g::before {{ background:linear-gradient(90deg,{T['green']},transparent); }}
 .kpi.a::before {{ background:linear-gradient(90deg,{T['amber']},transparent); }}
 .kpi.b::before {{ background:linear-gradient(90deg,{T['blue']},transparent); }}
 .kpi.p::before {{ background:linear-gradient(90deg,{T['purple']},transparent); }}
-.kpi-ico {{ font-size:1.4rem; margin-bottom:.3rem; }}
-.kpi-val {{ font-size:1.8rem; font-weight:800; line-height:1; font-family:'JetBrains Mono',monospace; margin-bottom:.15rem; }}
-.kpi-lbl {{ font-size:.68rem; color:{T['txt2']}; text-transform:uppercase; letter-spacing:.8px; font-weight:500; }}
+.kpi-ico {{ font-size:1.3rem; margin-bottom:.25rem; }}
+.kpi-val {{ font-size:1.65rem; font-weight:800; line-height:1; font-family:'JetBrains Mono',monospace; margin-bottom:.15rem; }}
+.kpi-lbl {{ font-size:.66rem; color:{T['txt2']}; text-transform:uppercase; letter-spacing:.8px; font-weight:500; }}
 .kpi.g .kpi-val {{ color:{T['green']}; }} .kpi.a .kpi-val {{ color:{T['amber']}; }}
 .kpi.b .kpi-val {{ color:{T['blue']};  }} .kpi.p .kpi-val {{ color:{T['purple']}; }}
 
 /* ── Hide sidebar ── */
 [data-testid="stSidebar"] {{ display:none !important; }}
 [data-testid="collapsedControl"] {{ display:none !important; }}
-.stMainBlockContainer {{ max-width:100% !important; padding-left:1.5rem !important; padding-right:1.5rem !important; }}
 
-/* ── Run Button ── */
-.stButton > button {{
+/* ── Primary Run Button ── */
+button[kind="primary"], .stButton > button[kind="primary"] {{
     background:linear-gradient(135deg,#00bb5a,{T['green']}) !important;
     color:#040c12 !important; font-weight:800 !important; font-size:.95rem !important;
-    border:none !important; border-radius:12px !important; padding:.72rem !important;
+    border:none !important; border-radius:12px !important; padding:.75rem !important;
     box-shadow:0 4px 22px rgba(0,200,100,.25) !important; transition:all .25s ease !important;
 }}
-.stButton > button:hover {{ transform:translateY(-2px) scale(1.01) !important; box-shadow:0 8px 32px rgba(0,200,100,.4) !important; }}
+button[kind="primary"]:hover, .stButton > button[kind="primary"]:hover {{
+    transform:translateY(-2px) scale(1.01) !important;
+    box-shadow:0 8px 32px rgba(0,200,100,.4) !important;
+}}
+
+/* ── Secondary / Theme Toggle Button ── */
+button[kind="secondary"], .stButton > button[kind="secondary"] {{
+    background: {T['toggle_bg']} !important;
+    color: {T['toggle_txt']} !important;
+    border: 1px solid {T['toggle_bdr']} !important;
+    border-radius: 40px !important;
+    padding: 0.35rem 1rem !important;
+    font-size: 0.8rem !important;
+    font-weight: 600 !important;
+    box-shadow: none !important;
+    transition: all 0.2s ease !important;
+}}
+button[kind="secondary"]:hover, .stButton > button[kind="secondary"]:hover {{
+    border-color: {T['green']} !important;
+    color: {T['green']} !important;
+    transform: translateY(-1px) !important;
+}}
 
 /* ── Download Button ── */
 .stDownloadButton > button {{
@@ -685,15 +722,37 @@ html, body, [class*="css"] {{ font-family: 'Inter', sans-serif !important; color
 }}
 [data-testid="stDataFrame"] tbody td {{ font-family:'JetBrains Mono',monospace !important; font-size:.78rem !important; border-bottom:1px solid {T['df_row_border']} !important; }}
 
-/* ── Controls Panel ── */
-.ctrl-panel {{
-    background: {T['ctrl_bg']};
-    border: 1px solid {T['ctrl_border']};
-    border-radius: 16px; padding: 1.5rem 1.8rem; margin-bottom: 1.5rem;
+/* ── Expander Styling (Dark & Light) ── */
+[data-testid="stExpander"] {{
+    background: {T['bg_card']} !important;
+    border: 1px solid {T['ctrl_border']} !important;
+    border-radius: 16px !important;
+    overflow: hidden !important;
+    margin-bottom: 1.5rem !important;
 }}
+[data-testid="stExpander"] details {{
+    background: transparent !important;
+    border: none !important;
+}}
+[data-testid="stExpander"] summary {{
+    background: {T['ctrl_bg']} !important;
+    color: {T['txt']} !important;
+    font-weight: 700 !important;
+    font-size: 0.95rem !important;
+    padding: 0.9rem 1.4rem !important;
+}}
+[data-testid="stExpander"] summary:hover {{
+    color: {T['green']} !important;
+}}
+[data-testid="stExpander"] [data-testid="stExpanderDetails"] {{
+    background: {T['bg_card']} !important;
+    padding: 1.2rem 1.5rem !important;
+    border-top: 1px solid {T['border']} !important;
+}}
+
 .ctrl-section-title {{
-    font-size:.65rem; font-weight:700; color:{T['txt3']};
-    text-transform:uppercase; letter-spacing:1.3px; margin:1rem 0 .3rem;
+    font-size:.68rem; font-weight:700; color:{T['txt3']};
+    text-transform:uppercase; letter-spacing:1.3px; margin:0.8rem 0 .3rem;
 }}
 
 /* ── Results Banner ── */
@@ -717,73 +776,52 @@ html, body, [class*="css"] {{ font-family: 'Inter', sans-serif !important; color
 .leg-tip  {{ margin-left:auto; font-size:.68rem; color:{T['txt3']}; font-style:italic; }}
 
 /* ── Idle ── */
-.idle {{ display:flex; flex-direction:column; align-items:center; justify-content:center; padding:5rem 2rem; text-align:center; }}
-.idle-ico {{ font-size:5rem; margin-bottom:1.5rem; animation:float 3s ease-in-out infinite; }}
+.idle {{ display:flex; flex-direction:column; align-items:center; justify-content:center; padding:4rem 2rem; text-align:center; }}
+.idle-ico {{ font-size:4.5rem; margin-bottom:1.2rem; animation:float 3s ease-in-out infinite; }}
 @keyframes float {{ 0%,100%{{transform:translateY(0)}} 50%{{transform:translateY(-14px)}} }}
-.idle-h {{ font-size:1.75rem; font-weight:700; color:{T['txt']}; margin-bottom:.6rem; }}
-.idle-p {{ font-size:.95rem; color:{T['txt2']}; max-width:430px; line-height:1.7; }}
-.idle-steps {{ display:flex; gap:1.2rem; margin-top:2.5rem; flex-wrap:wrap; justify-content:center; }}
+.idle-h {{ font-size:1.6rem; font-weight:700; color:{T['txt']}; margin-bottom:.5rem; }}
+.idle-p {{ font-size:.92rem; color:{T['txt2']}; max-width:440px; line-height:1.7; }}
+.idle-steps {{ display:flex; gap:1.2rem; margin-top:2.2rem; flex-wrap:wrap; justify-content:center; }}
 .step {{ background:{T['bg_card']}; border:1px solid {T['border']}; border-radius:13px;
-    padding:1rem 1.2rem; width:148px; text-align:left; transition:border-color .25s; }}
+    padding:1rem 1.2rem; width:145px; text-align:left; transition:border-color .25s; }}
 .step:hover {{ border-color:{T['green']}44; }}
 .step-n {{ font-size:1.3rem; font-weight:800; color:{T['green']}; font-family:'JetBrains Mono',monospace; margin-bottom:.3rem; }}
 .step-t {{ font-size:.78rem; font-weight:600; color:{T['txt']}; margin-bottom:.15rem; }}
 .step-d {{ font-size:.68rem; color:{T['txt3']}; line-height:1.4; }}
 [data-testid="stSlider"] label {{ font-size:.76rem !important; color:{T['txt2']} !important; }}
 
-/* ── Theme Toggle Floating Button ── */
-.theme-toggle-wrap {{
-    position: fixed;
-    top: 14px;
-    right: 18px;
-    z-index: 9999;
-}}
-.theme-toggle-wrap .stButton > button {{
-    background: {T['toggle_bg']} !important;
-    color: {T['toggle_txt']} !important;
-    border: 1px solid {T['toggle_bdr']} !important;
-    border-radius: 50px !important;
-    padding: 0.35rem 1rem !important;
-    font-size: 0.78rem !important;
-    font-weight: 600 !important;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.15) !important;
-    backdrop-filter: blur(12px) !important;
-    letter-spacing: 0.3px;
-    white-space: nowrap;
-}}
-.theme-toggle-wrap .stButton > button:hover {{
-    transform: translateY(-1px) !important;
-    box-shadow: 0 4px 18px rgba(0,0,0,0.2) !important;
-}}
-
 /* ── Mobile responsive ── */
 @media (max-width: 640px) {{
-    .hero {{ padding: 1.6rem 1.2rem; }}
-    .hero-title {{ font-size: 2rem; }}
-    .hero-sub {{ font-size: .85rem; }}
-    .hero-meta {{ gap: 1.2rem; }}
-    .kpi-grid {{ grid-template-columns: repeat(3, 1fr); gap: .6rem; }}
-    .kpi-val  {{ font-size: 1.4rem; }}
+    .block-container, [data-testid="stMainBlockContainer"], .main .block-container {{
+        max-width: 100% !important;
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
+    }}
+    .hero {{ padding: 1.5rem 1.2rem; }}
+    .hero-title {{ font-size: 1.9rem; }}
+    .hero-sub {{ font-size: .82rem; }}
+    .hero-meta {{ gap: 1rem; }}
+    .kpi-grid {{ grid-template-columns: repeat(3, 1fr); gap: .5rem; }}
+    .kpi-val  {{ font-size: 1.35rem; }}
     .idle-steps {{ gap: .8rem; }}
     .step {{ width: 130px; }}
     .rbanner {{ flex-direction: column; gap: .5rem; }}
     .legend {{ gap: 1rem; }}
     .leg-tip {{ display: none; }}
-    .theme-toggle-wrap {{ top: 10px; right: 10px; }}
 }}
 </style>
 """, unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────
-#  Theme Toggle Button (fixed top-right)
+#  Top Nav Bar (Theme Switcher)
 # ─────────────────────────────────────────────
 
-st.markdown('<div class="theme-toggle-wrap">', unsafe_allow_html=True)
-if st.button(f"{T['toggle_icon']} {T['toggle_label']}", key="theme_toggle"):
-    st.session_state.theme = "light" if st.session_state.theme == "dark" else "dark"
-    st.rerun()
-st.markdown('</div>', unsafe_allow_html=True)
+top_col_space, top_col_btn = st.columns([8, 2])
+with top_col_btn:
+    if st.button(f"{T['toggle_icon']} {T['toggle_label']}", key="theme_toggle", type="secondary", use_container_width=True):
+        st.session_state.theme = "light" if st.session_state.theme == "dark" else "dark"
+        st.rerun()
 
 # ─────────────────────────────────────────────
 #  Hero Header
@@ -810,21 +848,7 @@ st.markdown(f"""
 #  Inline Scanner Controls (mobile-friendly)
 # ─────────────────────────────────────────────
 
-st.markdown("""
-<div class="ctrl-panel">
-    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:1rem;">
-        <div>
-            <div style="font-size:1rem;font-weight:700;color:#00ff88;">&#9881;&#65039; Scanner Controls</div>
-            <div style="font-size:.72rem;color:#8892a4;margin-top:2px;">Tune filters &amp; thresholds below</div>
-        </div>
-        <div style="font-size:.68rem;color:#3d4f65;text-align:right;line-height:1.7;">
-            &#128208; Momentum 60% &nbsp;&bull;&nbsp; &#127919; Entry 40% &nbsp;&bull;&nbsp; &#128737;&#65039; R:R &ge; 1.5
-        </div>
-    </div>
-</div>
-""", unsafe_allow_html=True)
-
-with st.expander("⚙️ Expand to configure filters", expanded=True):
+with st.expander("⚙️ Scanner Controls & Filters", expanded=True):
     st.markdown('<div class="ctrl-section-title">&#128202; RSI Thresholds</div>', unsafe_allow_html=True)
     col_r1, col_r2, col_r3 = st.columns(3)
     with col_r1:
@@ -844,7 +868,7 @@ with st.expander("⚙️ Expand to configure filters", expanded=True):
         top_n   = st.slider("Top Results",        min_value=5,  max_value=50, value=20)
 
     st.markdown("<br>", unsafe_allow_html=True)
-    run_button = st.button("\U0001f680 Run Full Scan", use_container_width=True)
+    run_button = st.button("\U0001f680 Run Full Scan", use_container_width=True, type="primary")
 
 
 # ─────────────────────────────────────────────
