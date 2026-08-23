@@ -1,12 +1,12 @@
-# Nifty Momentum & Intraday Scanner — Implementation Plan
+# Nifty Momentum, Intraday & Options Scanner — Implementation Plan
 
-**Version**: 2.4.0 | **Last Updated**: 2026-08-22
+**Version**: 2.5.0 | **Last Updated**: 2026-08-23
 
 ---
 
 ## 1. Architecture Overview
 
-A modular Streamlit application for Indian Equities (NSE), providing both **Swing Momentum (D · W · M)** and **Intraday MTF (Daily · 1h · 15m)** scanning capabilities.
+A modular Streamlit application for Indian Equities (NSE), providing **Swing Momentum (D · W · M)**, **Intraday MTF (Daily · 1h · 15m)**, and **Options Chain Strategy Layer (MTF + Chain Gate)** capabilities.
 
 ```
 Browser (Desktop & Mobile Clients)
@@ -19,20 +19,27 @@ Streamlit Controller (streamlit_app.py) — port 8501
         │
         ├── View 1: Swing Scanner (D · W · M)
         │     ├── get_nifty500_symbols() → NSE CSV 3-URL fallback chain
-        │     ├── download_prices()      → yfinance batch (80/batch), daily Parquet cache (<3s)
-        │     ├── get_benchmark()        → Nifty 500 (^CRSLDX / ^NSEI fallback)
+        │     ├── download_prices()      → yfinance batch, daily Parquet cache (<3s)
         │     ├── calculate_metrics()    → Multi-TF RSI, EMA 20/50/200, ADX, ATR, RS
         │     ├── score_candidates()     → Momentum (60%) + Entry (40%), R:R ≥ 1.5 Gate
         │     └── style_dataframe()      → Theme-aware styled dataframe + TV links
         │
-        └── View 2: Intraday MTF Scanner (Daily · 1h · 15m) [intraday_scanner.py]
-              ├── PRESET_UNIVERSES       → Nifty 50, F&O Beta, Banks, IT, Auto/Metals
-              ├── download_intraday_timeframes() → Daily (2y), 1h (60d), 15m (30d)
-              ├── evaluate_stock_intraday()      → Multi-TF RSI, Trend, VWAP, Breakout, ATR
-              ├── score_intraday_signal()        → 0-100 composite scoring & setup tagging
-              ├── calculate_position_size()      → Dynamic fractional share sizing
-              ├── style_intraday_dataframe()     → Intraday signal badges & TV links
-              └── 15m Price & VWAP Charts        → Deep-dive tab with interactive line chart
+        ├── View 2: Intraday MTF Scanner (Daily · 1h · 15m) [intraday_scanner.py]
+        │     ├── PRESET_UNIVERSES       → Nifty 50, F&O Beta, Banks, IT, Auto/Metals
+        │     ├── download_intraday_timeframes() → Daily (2y), 1h (60d), 15m (30d)
+        │     ├── evaluate_stock_intraday()      → Multi-TF RSI, Trend, VWAP, Breakout, ATR
+        │     ├── calculate_position_size()      → Dynamic fractional share sizing
+        │     └── 15m Price & VWAP Charts        → Deep-dive tab with interactive line chart
+        │
+        └── View 3: Options Strategy Layer (MTF + Chain Gate) [options_engine.py]
+              ├── LOT_SIZES               → Instrument master lot size dictionary
+              ├── fetch_or_simulate_option_chain() → Live & synthetic chain adapter
+              ├── analyze_option_chain()  → Total OI, PCR, ATM IV, ATM Spread, 0-100 Score
+              ├── recommend_strategy()    → Gated strategy selection (MTF ≥ 75 & Chain ≥ 75)
+              ├── select_strikes()        → ATM & OTM leg pairing
+              ├── price_strategy()        → Net premium, max profit, max loss, breakevens
+              ├── generate_payoff_curve() → P&L curve across underlying price range
+              └── Options Screener & Matrix → Batch strategy scanner & chain matrix table
 ```
 
 ---
@@ -40,47 +47,33 @@ Streamlit Controller (streamlit_app.py) — port 8501
 ## 2. Component Design & Responsibilities
 
 ### 2.1 UI Layer (`streamlit_app.py`)
-- **Top Navigation**: Dual-mode selector (`🚀 Swing Momentum` vs `⚡ Intraday MTF`) and theme switcher pill toggle.
+- **Top Navigation**: Tri-mode selector (`🚀 Swing Momentum`, `⚡ Intraday MTF`, `🎯 Options Strategy`) and theme switcher pill toggle.
 - **Hero Headers**: Mode-specific titles, live pulse dot, and market metadata badges.
-- **Controls & Expanders**: Inline, mobile-friendly expanders housing threshold sliders, universe selectors, and capital/risk inputs.
-- **KPI Summary Grid**: 6 metric cards displaying signal counts, top scores, and risk/reward ratios.
-- **Tabular Outputs**: Theme-aware styled dataframes with color-coded Action/Signal badges, JetBrains Mono font, and clickable TradingView chart links.
-- **Intraday Deep-Dive Tab**: Real-time stock selector, diagnostic cards, position sizing summaries, and 15-minute price vs VWAP/EMA charts.
+- **Options Strategy Tab 1**: Single stock selector, MTF score/direction inputs, risk budget, strategy execution card, and visual payoff diagram.
+- **Options Strategy Tab 2**: Batch Options Strategy Screener across F&O constituents.
+- **Options Strategy Tab 3**: Full Option Chain Matrix table with formatted Calls vs Strikes vs Puts.
 
-### 2.2 Intraday Engine Layer (`intraday_scanner.py`)
-- **Indicator Functions**: `rsi()`, `ema()`, `atr()`, `vwap()`, `volume_ratio()`, `prepare_df()`.
-- **Position Sizing**: `calculate_position_size(capital, risk_pct, entry, stop)`.
-- **Multi-Timeframe Fetcher**: `download_intraday_timeframes(symbol)`.
-- **Scoring & Evaluation**: `evaluate_stock_intraday()`, `score_intraday_signal()`.
-- **Batch Universe Scanner**: `scan_intraday_universe(symbols, ...)`.
+### 2.2 Options Engine Layer (`options_engine.py`)
+- **Schema Validation**: `validate_chain(chain)`.
+- **Chain Analytics**: `analyze_option_chain(chain, spot, underlying_direction)`.
+- **Strategy & Strike Selection**: `select_strikes(chain, spot, strategy)`.
+- **Pricing & Risk Gate**: `price_strategy(legs, strategy, lot_size)`, `recommend_strategy(...)`, `run_options_layer(...)`.
+- **Payoff Simulation**: `generate_payoff_curve(strategy, legs, spot, lot_size)`.
 
 ---
 
 ## 3. Data Pipelines & Caching Strategy
 
-### 3.1 Swing Scanner Pipeline (Daily Parquet Cache)
+### 3.1 Options Strategy Pipeline
 ```
-get_nifty500_symbols()
-    → check cache/prices_YYYY-MM-DD.parquet
-    → if miss: yfinance batch download (~60s) → save parquet
-    → if hit: read parquet (<2s)
-    → get_benchmark()
-    → calculate_metrics() (500 tickers)
-    → Layer 1 Hard Filters
-    → Layer 2 Composite Scoring (Momentum + Entry)
-    → Minimum R:R ≥ 1.5 Gate
-    → Render ranked table + KPIs + TV links
-```
-
-### 3.2 Intraday MTF Pipeline (On-Demand Bundles)
-```
-Select Universe (Preset, Custom, or Swing shortlist)
-    → fetch (2y 1d, 60d 1h, 30d 15m) per symbol
-    → compute VWAP, ATR(14), EMA 9/20/50, RSI across timeframes
-    → evaluate 20-bar 15m breakout & volume surge
-    → score 0-100 pts & classify signal / setup
-    → compute ATR stop loss & suggested position size
-    → Render ranked table + KPIs + TV links + 15m chart
+Select Symbol & Input MTF Direction/Score
+    → Fetch Option Chain (live yfinance or synthetic model)
+    → Validate Columns (expiry, strike, option_type, ltp, bid, ask, vol, oi, chg_oi, iv)
+    → Analyze Chain: PCR, Total OI, ATM IV, ATM Spread %, Chain Score (0-100)
+    → Evaluate Gate: Chain Score ≥ 75 & MTF Score ≥ 75?
+    → If Yes: Select Strikes (ATM + OTM) & Price Strategy (Net Prem, Max Loss, Max Profit, BE)
+    → Evaluate Risk Gate: Max Loss ≤ Capital × Max Risk %?
+    → If Passed: Render Execution Plan + Interactive Payoff Diagram + TV Link
 ```
 
 ---
@@ -89,20 +82,17 @@ Select Universe (Preset, Custom, or Swing shortlist)
 
 | Decision | Rationale |
 |---|---|
-| Dual-Mode Switcher in Top Nav | Seamlessly unifies multi-day swing screening and active intraday screening in one app |
-| Modular `intraday_scanner.py` | Keeps mathematical indicators and multi-timeframe fetching cleanly separated and testable |
-| Multi-Timeframe Intraday Alignment (D $\to$ 1h $\to$ 15m) | Drastically reduces false breakout signals by confirming higher timeframe bullish momentum |
-| Dynamic Position Sizing | Enforces strict risk management by automatically calculating exact share counts from stop loss |
-| Theme-Aware Dataframe Styling | Guarantees accessible WCAG-compliant contrast in both Dark and Light modes |
-| Daily Parquet Caching for Swing Mode | Reduces 500-stock swing scan time from ~60–90 seconds to under 3 seconds |
+| Tri-Mode Switcher in Top Nav | Unifies swing screening, active intraday trading, and options execution into a single app |
+| Modular `options_engine.py` | Encapsulates Black-Scholes math, options scoring, and payoff curves in an independent tested module |
+| Mandatory Dual-Gate Rule | Prevents options trading unless both underlying technicals (MTF $\ge 75$) and option chain liquidity/OI ($\ge 75$) align |
+| Defined-Risk Spread Preference | Mitigates theta decay and vega risk compared to naked single-leg options |
+| Visual Payoff Simulator | Provides immediate clarity on maximum risk, breakeven thresholds, and potential profit at expiry |
 
 ---
 
 ## 5. Verification & Testing Strategy
 
 1. **Automated Unit Tests**:
-   - `scratch/test_intraday_engine.py`: Validates indicator accuracy (Wilder's RSI, EMA, ATR, session VWAP, volume ratio), scoring boundaries, and position sizing formulas.
-2. **Live Data Integration Tests**:
-   - `scratch/test_live_intraday_scan.py`: Validates live multi-timeframe downloads and end-to-end signal computation on NSE symbols.
-3. **Syntax & Compile Check**:
-   - `python -m py_compile streamlit_app.py intraday_scanner.py`
+   - `scratch/test_options_engine.py`: Validates schema validation, PCR math, chain scoring, strike selection, payoff math, and gating.
+2. **Live Python Compilation**:
+   - `python -m py_compile streamlit_app.py intraday_scanner.py options_engine.py`

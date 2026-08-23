@@ -1,6 +1,6 @@
-# Nifty Momentum & Intraday Scanner — Task History
+# Nifty Momentum, Intraday & Options Scanner — Task History
 
-**Version**: 2.4.0 | **Last Updated**: 2026-08-22
+**Version**: 2.5.0 | **Last Updated**: 2026-08-23
 
 ---
 
@@ -97,11 +97,35 @@
 
 ---
 
+## Phase 9: Options Chain Strategy Layer Integration ✅
+
+- [x] 9.1 Created `options_engine.py` modular calculation & strategy module:
+  - Chain validation: `expiry`, `strike`, `option_type`, `ltp`, `bid`, `ask`, `volume`, `oi`, `change_oi`, `iv`.
+  - Option Chain Analytics & Scoring (0–100 pts) assessing total OI bias, change in OI, volume, ATM IV, ATM bid/ask spread %, PCR, and strike depth.
+  - Strategy recommendation gated by MTF Score ($\ge 75$) + Chain Score ($\ge 75$): `BULL_CALL_SPREAD`, `BEAR_PUT_SPREAD`, `LONG_STRANGLE`.
+  - Strike selection (`select_strikes`) for ATM buy legs and OTM sell legs.
+  - Pricing & Payoffs (`price_strategy`): Net premium, max loss, max profit, breakevens, and risk-reward ratio.
+  - Risk Budget Gate: Restricts trades where max loss exceeds user's capital risk budget.
+  - Payoff curve generator (`generate_payoff_curve`) plotting P&L at expiry.
+  - Instrument master lot size dictionary (`LOT_SIZES`) and live/synthetic data adapter (`fetch_or_simulate_option_chain`).
+- [x] 9.2 Upgraded `streamlit_app.py` top navigation to Tri-Mode Switcher:
+  - `🚀 Swing Momentum (D · W · M)`
+  - `⚡ Intraday MTF (Daily · 1h · 15m)`
+  - `🎯 Options Strategy (MTF + Chain Gate)`
+- [x] 9.3 Built 3 Options Dashboard Tabs:
+  - **🎯 Single Stock Strategy & Payoff**: Parameter controls, 6 KPI cards, execution plan card, selected legs table, interactive payoff diagram, and diagnostic checklist.
+  - **⚡ Options Strategy Screener**: Multi-asset F&O batch screener ranking qualified spreads.
+  - **📊 Option Chain Matrix Table**: Real-time formatted Calls vs Strikes vs Puts matrix with ATM indicators.
+- [x] 9.4 Created unit test script `scratch/test_options_engine.py` validating all calculations, gating rules, and payoff simulations.
+- [x] 9.5 Updated `README.md`, `.specify/constitution.md`, `.specify/spec.md`, `.specify/plan.md`, and `.specify/tasks.md`.
+
+---
+
 ## Backlog / Future Enhancements
 
-- [ ] B1. Backtest scoring rules over 5–10 years to validate the 2–5% monthly objective.
-- [ ] B2. Sector/industry filter (show only specific NSE sectors).
-- [ ] B3. Watchlist persistence (save/load to local JSON or browser session).
-- [ ] B4. Market cap filter (Large / Mid / Small cap buckets).
-- [ ] B5. Weekly email/Telegram digest of top BUY candidates.
-- [ ] B6. Inline mini-charts / sparklines in the results table.
+- [ ] B1. Greeks calculation (Delta, Gamma, Theta, Vega) using analytical Black-Scholes formulas.
+- [ ] B2. Multi-leg custom strategy builder (Iron Condor, Iron Butterfly, Calendar Spreads).
+- [ ] B3. Live WebSocket feed integration for real-time NSE options chain updates.
+- [ ] B4. Sector/industry filter (show only specific NSE sectors).
+- [ ] B5. Watchlist persistence (save/load to local JSON or browser session).
+- [ ] B6. Weekly email/Telegram digest of top qualified options setups.

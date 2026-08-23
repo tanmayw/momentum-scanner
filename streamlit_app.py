@@ -23,6 +23,18 @@ from intraday_scanner import (
     volume_ratio as intraday_volume_ratio
 )
 
+from options_engine import (
+    analyze_option_chain,
+    select_strikes,
+    price_strategy,
+    recommend_strategy,
+    run_options_layer,
+    generate_payoff_curve,
+    fetch_or_simulate_option_chain,
+    get_lot_size,
+    LOT_SIZES
+)
+
 NSE_CSV_URLS = [
     "https://www.niftyindices.com/IndexConstituent/ind_nifty500list.csv",
     "https://www.nseindia.com/content/indices/ind_nifty500list.csv",
@@ -531,12 +543,60 @@ def style_intraday_dataframe(df, theme="dark"):
     return styled
 
 
+def style_options_screener_dataframe(df, theme="dark"):
+    is_light = (theme == "light")
+    c_bull_bg   = "rgba(22, 163, 74, 0.14)" if is_light else "rgba(0, 255, 136, 0.14)"
+    c_bull_txt  = "#15803d" if is_light else "#00ff88"
+    c_bear_bg   = "rgba(220, 38, 38, 0.10)" if is_light else "rgba(255, 82, 82, 0.12)"
+    c_bear_txt  = "#b91c1c" if is_light else "#ff5252"
+    c_strang_bg = "rgba(147, 51, 234, 0.12)" if is_light else "rgba(187, 134, 252, 0.15)"
+    c_strang_txt= "#7e22ce" if is_light else "#bb86fc"
+
+    def color_rec(val):
+        v = str(val).upper()
+        if "BULL" in v or "CALL" in v:
+            return f"background-color:{c_bull_bg};color:{c_bull_txt};font-weight:700;"
+        elif "BEAR" in v or "PUT" in v:
+            return f"background-color:{c_bear_bg};color:{c_bear_txt};font-weight:700;"
+        elif "STRANGLE" in v:
+            return f"background-color:{c_strang_bg};color:{c_strang_txt};font-weight:700;"
+        return "color:#64748b;" if is_light else "color:#9e9e9e;"
+
+    def color_verdict(val):
+        v = str(val).upper()
+        if "SUPPORTS TRADE" in v and "PARTIAL" not in v:
+            return f"color:{c_bull_txt};font-weight:700;"
+        elif "PARTIALLY" in v:
+            return "color:#b45309;" if is_light else "color:#ffb800;"
+        return "color:#64748b;" if is_light else "color:#9e9e9e;"
+
+    styled = df.style \
+        .map(color_rec, subset=["Strategy"]) \
+        .map(color_verdict, subset=["Chain_Verdict"])
+
+    format_dict = {
+        "Spot":         "\u20b9{:.2f}",
+        "MTF_Score":    "{:.0f}",
+        "Chain_Score":  "{:.0f}",
+        "PCR":          "{:.2f}",
+        "ATM_IV":       "{:.1f}%",
+        "Net_Premium":  "\u20b9{:.2f}",
+        "Max_Loss":     "\u20b9{:.2f}",
+        "Max_Profit":   "\u20b9{:.2f}",
+        "Breakeven":    "\u20b9{:.2f}",
+        "RR_Ratio":     "{:.2f}:1"
+    }
+    cols_to_format = {k: v for k, v in format_dict.items() if k in df.columns}
+    styled = styled.format(cols_to_format)
+    return styled
+
+
 # ─────────────────────────────────────────────
 #  Page Config
 # ─────────────────────────────────────────────
 
 st.set_page_config(
-    page_title="Nifty Momentum & Intraday Scanner",
+    page_title="Nifty Momentum & Options Scanner",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -880,7 +940,7 @@ label span,
     font-weight: 600 !important;
 }}
 
-/* Stock Detail Card */
+/* Stock Detail & Strategy Card */
 .detail-card {{
     background: {T['bg_card']};
     border: 1px solid {T['border']};
@@ -889,7 +949,7 @@ label span,
     margin-bottom: 1.4rem;
 }}
 .detail-title {{
-    font-size: 1.4rem;
+    font-size: 1.35rem;
     font-weight: 800;
     color: {T['txt']};
     margin-bottom: 0.4rem;
@@ -921,20 +981,34 @@ label span,
 #  Top Nav Bar (View Selector + Theme Switcher)
 # ─────────────────────────────────────────────
 
-top_col_view, top_col_btn = st.columns([7, 3])
+top_col_view, top_col_btn = st.columns([7.5, 2.5])
+
+MODE_OPTIONS = [
+    "🚀 Swing Momentum (D · W · M)",
+    "⚡ Intraday MTF (Daily · 1h · 15m)",
+    "🎯 Options Strategy (MTF + Chain Gate)"
+]
+
+current_mode_idx = 0
+if st.session_state.app_view == "Intraday MTF":
+    current_mode_idx = 1
+elif st.session_state.app_view == "Options Strategy":
+    current_mode_idx = 2
 
 with top_col_view:
     app_view = st.radio(
         "Scanner Mode",
-        options=["🚀 Swing Momentum (D · W · M)", "⚡ Intraday MTF (Daily · 1h · 15m)"],
-        index=0 if st.session_state.app_view == "Swing Momentum" else 1,
+        options=MODE_OPTIONS,
+        index=current_mode_idx,
         horizontal=True,
         label_visibility="collapsed"
     )
     if "Swing" in app_view:
         st.session_state.app_view = "Swing Momentum"
-    else:
+    elif "Intraday" in app_view:
         st.session_state.app_view = "Intraday MTF"
+    else:
+        st.session_state.app_view = "Options Strategy"
 
 with top_col_btn:
     if st.button(f"{T['toggle_icon']} {T['toggle_label']}", key="theme_toggle", type="secondary", use_container_width=True):
@@ -1181,7 +1255,7 @@ if st.session_state.app_view == "Swing Momentum":
 # =============================================================================
 #  VIEW 2: INTRADAY MULTI-TIMEFRAME (MTF) SCANNER
 # =============================================================================
-else:
+elif st.session_state.app_view == "Intraday MTF":
 
     st.markdown(f"""
     <div class="hero">
@@ -1433,7 +1507,7 @@ else:
         available_syms = universe_symbols if 'universe_symbols' in locals() and universe_symbols else PRESET_UNIVERSES["Nifty 50 Liquid Top"]
         selected_stock = st.selectbox("Select Stock for Deep-Dive Analysis", available_syms)
 
-        col_d_act, col_d_cap = st.columns([2, 2])
+        col_d_act, col_d_opt = st.columns([2, 2])
         with col_d_act:
             analyze_btn = st.button("📊 Analyze Stock Details", type="primary", use_container_width=True)
 
@@ -1455,7 +1529,6 @@ else:
                 )
 
                 if stock_sig:
-                    # Metric cards
                     mc1, mc2, mc3, mc4, mc5 = st.columns(5)
                     mc1.metric("Intraday Score", f"{stock_sig['Score']:.0f}/100")
                     mc2.metric("Signal", stock_sig["Signal"])
@@ -1469,7 +1542,6 @@ else:
                     rc3.metric("15m RSI", f"{stock_sig['M15_RSI']:.1f}", "Trend: " + ("Bullish" if stock_sig["M15_Trend"] else "Neutral"))
                     rc4.metric("15m Vol Ratio", f"{stock_sig['Volume_Ratio']:.2f}x")
 
-                    # Position size calculation
                     c_cap = trade_capital if 'trade_capital' in locals() else 100000
                     c_risk = risk_pct if 'risk_pct' in locals() else 0.5
                     pos_qty = calculate_position_size(c_cap, c_risk, stock_sig["Price"], stock_sig["Stop_Loss"])
@@ -1491,7 +1563,6 @@ else:
                     </div>
                     """, unsafe_allow_html=True)
 
-                    # 15-minute Price & VWAP Chart
                     st.markdown(f"#### 📈 15-Minute Price Action vs VWAP ({selected_stock})")
                     m_recent = m_df.tail(75).copy()
                     m_recent["VWAP"] = intraday_vwap(m_recent)
@@ -1502,3 +1573,276 @@ else:
                     st.line_chart(chart_data)
 
                     st.markdown(f"[🔗 Open Full Interactive Chart on TradingView](https://in.tradingview.com/chart/?symbol=NSE:{selected_stock})")
+
+
+# =============================================================================
+#  VIEW 3: OPTIONS CHAIN STRATEGY LAYER
+# =============================================================================
+else:
+
+    st.markdown(f"""
+    <div class="hero">
+        <div class="hero-badge"><span class="pulse"></span>Live Options Strategy Engine</div>
+        <div class="hero-title">Options Chain Strategy</div>
+        <div class="hero-sub">Multi-Timeframe Gated Options &nbsp;&middot;&nbsp; Put-Call Ratio &amp; OI Analytics &nbsp;&middot;&nbsp; Spreads &amp; Strangles &nbsp;&middot;&nbsp; Payoff Simulation</div>
+        <div class="hero-meta">
+            <div><div class="hm-label">Architecture</div><div class="hm-val">MTF &rarr; Chain Gate &rarr; Payoff</div></div>
+            <div><div class="hm-label">Strategies</div><div class="hm-val">Bull Call &bull; Bear Put &bull; Strangle</div></div>
+            <div><div class="hm-label">Risk Gate</div><div class="hm-val">Max Loss &le; Risk Budget</div></div>
+            <div><div class="hm-label">As of</div><div class="hm-val">{now_str}</div></div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    tab_opt_single, tab_opt_screen, tab_opt_chain = st.tabs([
+        "🎯 Single Stock Strategy & Payoff",
+        "⚡ Options Strategy Screener",
+        "📊 Option Chain Matrix Table"
+    ])
+
+    # ── TAB 1: Single Stock Strategy & Payoff ──
+    with tab_opt_single:
+        FO_SYMBOLS = [
+            "RELIANCE", "NIFTY", "BANKNIFTY", "HDFCBANK", "ICICIBANK", "SBIN",
+            "INFY", "TCS", "BHARTIARTL", "LT", "TRENT", "HAL", "BEL", "DIXON",
+            "POLYCAB", "PERSISTENT", "COFORGE", "MCX", "ZOMATO", "TATAMOTORS", "M&M"
+        ]
+
+        with st.expander("⚙️ Options Strategy & Risk Parameters", expanded=True):
+            o_c1, o_c2, o_c3 = st.columns(3)
+            with o_c1:
+                opt_symbol = st.selectbox("Underlying Symbol", FO_SYMBOLS, index=0)
+            with o_c2:
+                opt_direction = st.selectbox("MTF Direction Bias", ["BULLISH", "BEARISH", "NEUTRAL"], index=0)
+            with o_c3:
+                opt_mtf_score = st.slider("Underlying MTF Score", min_value=40, max_value=100, value=85)
+
+            o_k1, o_k2, o_k3, o_k4 = st.columns(4)
+            with o_k1:
+                opt_capital = st.number_input("Option Trading Capital (₹)", min_value=10000, max_value=50000000, value=100000, step=10000)
+            with o_k2:
+                opt_risk_pct = st.number_input("Max Risk % per Trade", min_value=0.1, max_value=3.0, value=0.5, step=0.1)
+            with o_k3:
+                default_lot = get_lot_size(opt_symbol)
+                opt_lot_size = st.number_input("Contract Lot Size", min_value=1, max_value=10000, value=default_lot, step=25)
+            with o_k4:
+                opt_prefer_spreads = st.checkbox("Prefer Defined-Risk Spreads", value=True, help="Recommends Bull Call / Bear Put spreads over naked long options")
+
+            st.markdown("<br>", unsafe_allow_html=True)
+            eval_opt_btn = st.button("🎯 Evaluate Options Strategy", type="primary", use_container_width=True)
+
+        if eval_opt_btn or opt_symbol:
+            with st.spinner(f"Analyzing option chain and simulating strategies for {opt_symbol}..."):
+                # Fetch recent spot price
+                raw_d = download_ticker_data(opt_symbol, "5d", "1d")
+                spot_price = float(raw_d["Close"].iloc[-1]) if not raw_d.empty else 1300.0
+                opt_chain_df = fetch_or_simulate_option_chain(opt_symbol, spot_price)
+
+                opt_result = run_options_layer(
+                    option_chain=opt_chain_df,
+                    spot=spot_price,
+                    mtf_score=opt_mtf_score,
+                    direction=opt_direction,
+                    capital=opt_capital,
+                    lot_size=opt_lot_size,
+                    max_risk_pct=opt_risk_pct,
+                    prefer_spreads=opt_prefer_spreads
+                )
+
+            chain_meta = opt_result["chain_analysis"]
+            rec_meta = opt_result["recommendation"]
+
+            if chain_meta.get("valid"):
+                # 6 KPI Summary Cards
+                kc1, kc2, kc3, kc4, kc5, kc6 = st.columns(6)
+                kc1.metric("Chain Score", f"{chain_meta['chain_score']:.0f}/100")
+                kc2.metric("Chain Verdict", chain_meta["verdict"])
+                kc3.metric("PCR", f"{chain_meta['pcr']:.2f}" if pd.notna(chain_meta['pcr']) else "N/A")
+                kc4.metric("ATM IV", f"{chain_meta['avg_atm_iv']:.1f}%" if pd.notna(chain_meta['avg_atm_iv']) else "N/A")
+                kc5.metric("ATM Spread", f"{chain_meta['avg_atm_spread_pct']:.2f}%" if pd.notna(chain_meta['avg_atm_spread_pct']) else "N/A")
+                kc6.metric("Strategy", rec_meta.get("recommendation", "NO TRADE"))
+
+                st.markdown("<br>", unsafe_allow_html=True)
+
+                # Strategy Result Card
+                if rec_meta.get("recommendation") != "NO TRADE" and "payoff" in opt_result and opt_result["payoff"]:
+                    payoff = opt_result["payoff"]
+                    legs = opt_result["legs"]
+                    st_name = opt_result["strategy"].replace("_", " ")
+
+                    st.markdown(f"""
+                    <div class="detail-card">
+                        <div class="detail-title">🏆 Recommended Strategy &mdash; {st_name} ({opt_symbol})</div>
+                        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:1rem; margin-top:0.8rem;">
+                            <div><div class="hm-label">Underlying Spot</div><div class="hm-val">₹{spot_price:,.2f}</div></div>
+                            <div><div class="hm-label">Net Premium</div><div class="hm-val" style="color:{T['blue']};">₹{payoff['net_premium']:.2f}</div></div>
+                            <div><div class="hm-label">Max Loss</div><div class="hm-val" style="color:{T['red']};">₹{payoff['max_loss']:,.2f}</div></div>
+                            <div><div class="hm-label">Max Profit</div><div class="hm-val" style="color:{T['green']};">{'₹' + f"{payoff['max_profit']:,.2f}" if payoff['max_profit'] != float('inf') else 'Unlimited'}</div></div>
+                            <div><div class="hm-label">Breakeven</div><div class="hm-val">₹{payoff['breakeven']:,.2f}</div></div>
+                            <div><div class="hm-label">Risk / Reward</div><div class="hm-val">{f"{payoff['risk_reward']:.2f}:1" if pd.notna(payoff['risk_reward']) else 'N/A'}</div></div>
+                            <div><div class="hm-label">Risk Budget</div><div class="hm-val">₹{rec_meta.get('max_allowed_loss', 0):,.2f}</div></div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    # Selected Legs Display
+                    st.markdown("#### 📑 Strategy Legs & Execution Details")
+                    leg_rows = []
+                    if "buy" in legs:
+                        leg_rows.append({
+                            "Action": "BUY (Long)",
+                            "Option": f"{legs['buy'].strike:.0f} {legs['buy'].option_type}",
+                            "LTP": f"₹{legs['buy'].ltp:.2f}",
+                            "Bid/Ask": f"₹{legs['buy'].bid:.2f} / ₹{legs['buy'].ask:.2f}",
+                            "IV": f"{legs['buy'].iv:.1f}%",
+                            "OI": f"{legs['buy'].oi:,}",
+                            "Expiry": str(legs['buy'].expiry)
+                        })
+                    if "sell" in legs:
+                        leg_rows.append({
+                            "Action": "SELL (Short)",
+                            "Option": f"{legs['sell'].strike:.0f} {legs['sell'].option_type}",
+                            "LTP": f"₹{legs['sell'].ltp:.2f}",
+                            "Bid/Ask": f"₹{legs['sell'].bid:.2f} / ₹{legs['sell'].ask:.2f}",
+                            "IV": f"{legs['sell'].iv:.1f}%",
+                            "OI": f"{legs['sell'].oi:,}",
+                            "Expiry": str(legs['sell'].expiry)
+                        })
+                    if "call" in legs and "put" in legs:
+                        leg_rows.append({
+                            "Action": "BUY CALL",
+                            "Option": f"{legs['call'].strike:.0f} CE",
+                            "LTP": f"₹{legs['call'].ltp:.2f}",
+                            "Bid/Ask": f"₹{legs['call'].bid:.2f} / ₹{legs['call'].ask:.2f}",
+                            "IV": f"{legs['call'].iv:.1f}%",
+                            "OI": f"{legs['call'].oi:,}",
+                            "Expiry": str(legs['call'].expiry)
+                        })
+                        leg_rows.append({
+                            "Action": "BUY PUT",
+                            "Option": f"{legs['put'].strike:.0f} PE",
+                            "LTP": f"₹{legs['put'].ltp:.2f}",
+                            "Bid/Ask": f"₹{legs['put'].bid:.2f} / ₹{legs['put'].ask:.2f}",
+                            "IV": f"{legs['put'].iv:.1f}%",
+                            "OI": f"{legs['put'].oi:,}",
+                            "Expiry": str(legs['put'].expiry)
+                        })
+
+                    st.dataframe(pd.DataFrame(leg_rows), use_container_width=True, hide_index=True)
+
+                    # Payoff Curve
+                    st.markdown(f"#### 📊 Payoff Diagram at Expiry ({st_name})")
+                    curve = generate_payoff_curve(opt_result["strategy"], legs, spot_price, lot_size=opt_lot_size)
+                    if not curve.empty:
+                        st.line_chart(curve.set_index("Spot_at_Expiry")[["PnL"]])
+
+                else:
+                    st.warning(f"Strategy Gated: {rec_meta.get('reason', 'Conditions not met')}")
+
+                # Option Chain Diagnostic Checklist
+                with st.expander("🔍 Option Chain Diagnostics & Signals Checklist", expanded=False):
+                    for r in chain_meta.get("reasons", []):
+                        st.markdown(f"- ✅ {r}")
+
+    # ── TAB 2: Options Strategy Screener ──
+    with tab_opt_screen:
+        st.markdown("#### ⚡ Real-Time Multi-Asset Options Strategy Screener")
+        st.caption("Screens F&O constituents against MTF Momentum + Option Chain Quality gates.")
+
+        col_s1, col_s2 = st.columns(2)
+        with col_s1:
+            screen_universe = st.multiselect("Select Screener Symbols", FO_SYMBOLS, default=FO_SYMBOLS[:10])
+        with col_s2:
+            screen_capital = st.number_input("Screener Capital (₹)", value=100000, step=10000, key="scr_cap")
+
+        run_screener_btn = st.button("🚀 Screen Options Universe", type="primary", use_container_width=True)
+
+        if run_screener_btn and screen_universe:
+            screen_rows = []
+            scr_prog = st.progress(0.0, text="Evaluating Options Strategies...")
+
+            for i, sym in enumerate(screen_universe):
+                try:
+                    raw_d = download_ticker_data(sym, "5d", "1d")
+                    sp = float(raw_d["Close"].iloc[-1]) if not raw_d.empty else 1000.0
+                    chain = fetch_or_simulate_option_chain(sym, sp)
+                    lot = get_lot_size(sym)
+                    res = run_options_layer(
+                        chain, sp, mtf_score=80.0, direction="BULLISH",
+                        capital=screen_capital, lot_size=lot, max_risk_pct=0.5, prefer_spreads=True
+                    )
+                    ca = res["chain_analysis"]
+                    rc = res["recommendation"]
+                    po = res.get("payoff", {})
+
+                    screen_rows.append({
+                        "Symbol": sym,
+                        "Spot": sp,
+                        "MTF_Score": 80.0,
+                        "Chain_Score": ca.get("chain_score", 0),
+                        "Chain_Verdict": ca.get("verdict", "NO TRADE"),
+                        "PCR": ca.get("pcr", np.nan),
+                        "ATM_IV": ca.get("avg_atm_iv", np.nan),
+                        "Strategy": rc.get("recommendation", "NO TRADE"),
+                        "Net_Premium": po.get("net_premium", np.nan) if po else np.nan,
+                        "Max_Loss": po.get("max_loss", np.nan) if po else np.nan,
+                        "Max_Profit": po.get("max_profit", np.nan) if po else np.nan,
+                        "Breakeven": po.get("breakeven", np.nan) if po else np.nan,
+                        "RR_Ratio": po.get("risk_reward", np.nan) if po else np.nan,
+                    })
+                except Exception:
+                    pass
+                scr_prog.progress((i + 1) / len(screen_universe), text=f"Screening {sym}...")
+
+            scr_prog.empty()
+
+            if screen_rows:
+                scr_df = pd.DataFrame(screen_rows)
+                scr_df["Symbol"] = scr_df["Symbol"].apply(
+                    lambda s: f"https://in.tradingview.com/chart/?symbol=NSE:{s}"
+                )
+                styled_scr = style_options_screener_dataframe(scr_df, theme=st.session_state.theme)
+                st.dataframe(
+                    styled_scr,
+                    column_config={
+                        "Symbol": st.column_config.LinkColumn(
+                            "Symbol",
+                            help="Click to open chart on TradingView",
+                            display_text=r"https://in\.tradingview\.com/chart/\?symbol=NSE:(.*)"
+                        )
+                    },
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+    # ── TAB 3: Option Chain Matrix Table ──
+    with tab_opt_chain:
+        st.markdown(f"#### 📊 Option Chain Matrix &mdash; {opt_symbol}")
+        if 'opt_chain_df' in locals() and not opt_chain_df.empty:
+            chain_disp = opt_chain_df.copy()
+            c_side = chain_disp[chain_disp.option_type == "CE"].set_index("strike")
+            p_side = chain_disp[chain_disp.option_type == "PE"].set_index("strike")
+
+            combined_matrix = pd.DataFrame({
+                "Call OI": c_side["oi"],
+                "Call Chg OI": c_side["change_oi"],
+                "Call Vol": c_side["volume"],
+                "Call IV": c_side["iv"],
+                "Call LTP": c_side["ltp"],
+                "Put LTP": p_side["ltp"],
+                "Put IV": p_side["iv"],
+                "Put Vol": p_side["volume"],
+                "Put Chg OI": p_side["change_oi"],
+                "Put OI": p_side["oi"],
+            }).dropna(subset=["Call LTP", "Put LTP"]).sort_index()
+
+            st.dataframe(
+                combined_matrix.style.format({
+                    "Call LTP": "₹{:.2f}", "Put LTP": "₹{:.2f}",
+                    "Call IV": "{:.1f}%", "Put IV": "{:.1f}%",
+                    "Call OI": "{:,.0f}", "Put OI": "{:,.0f}",
+                    "Call Vol": "{:,.0f}", "Put Vol": "{:,.0f}",
+                    "Call Chg OI": "{:+,.0f}", "Put Chg OI": "{:+,.0f}"
+                }),
+                use_container_width=True
+            )

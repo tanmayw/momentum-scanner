@@ -1,8 +1,9 @@
-# Nifty Momentum & Intraday Scanner
+# Nifty Momentum, Intraday & Options Scanner
 
-A **modern, Streamlit-powered** dual-mode stock screener for Indian Equities (NSE) providing both:
+A **modern, Streamlit-powered** multi-mode stock & derivatives trading screener for Indian Equities (NSE) providing:
 1. **🚀 Swing Momentum Scanner (Daily · Weekly · Monthly)** — Scans all Nifty 500 constituents using a two-layer momentum & entry quality scoring engine with local daily Parquet caching (< 3s).
 2. **⚡ Intraday MTF Scanner (Daily · Hourly · 15-Minute)** — Real-time multi-timeframe trend alignment, 15m VWAP breakouts, ATR stops, and automatic fractional position sizing.
+3. **🎯 Options Chain Strategy Layer (MTF + Chain Gate)** — Multi-Timeframe gated strategy selection (Bull Call Spreads, Bear Put Spreads, Long Strangles), Put-Call Ratio (PCR) analysis, strike selection, and interactive visual payoff curve diagrams.
 
 > **Tech stack**: Python · Streamlit · Pandas · yfinance · NumPy · JetBrains Mono & Inter typography
 
@@ -10,17 +11,18 @@ A **modern, Streamlit-powered** dual-mode stock screener for Indian Equities (NS
 
 ## Key Features
 
-- 🔄 **Unified Dual-Mode Architecture**: Instant toggle between **Swing Momentum Mode** (Nifty 500) and **Intraday MTF Mode** (Presets, High-Beta F&O, Custom watchlists, or top swing candidates).
+- 🔄 **Unified Tri-Mode Architecture**: Instant toggle between **Swing Momentum Mode** (Nifty 500), **Intraday MTF Mode** (Presets, High-Beta F&O, Custom watchlists), and **Options Strategy Mode** (F&O stocks & indices).
 - 🌓 **Dual-Theme Engine**: Seamless toggle between **Dark Terminal Mode** and **Light Mode** (accessible, WCAG AAA compliant color contrast).
 - 📱 **Mobile & Desktop Optimized**: Responsive layout with centered container, intuitive inline controls, and mobile-friendly metrics without hidden sidebars.
-- 📊 **6 KPI Summary Cards**: Live counts for BUY Signals, Watchlist setups, Top Score, and Average Risk/Reward ratio.
+- 📊 **6 KPI Summary Cards**: Live counts and metric cards tailored for each trading mode.
 - ⚡ **Multi-Timeframe Technical Engine**:
   - **Swing**: Daily, Weekly, and Monthly RSI, EMA 20/50/200 structure, ADX (14), and Relative Strength vs Nifty 500.
   - **Intraday**: Daily & Hourly EMA 20/50 alignment, 15m VWAP, EMA 9/20 crossovers, 20-bar high breakouts, and volume surge.
-- 🛡️ **Intraday Position Sizing & Risk Management**: Dynamic position sizing calculator based on trade capital, user-defined risk percentage, and 15m ATR stop loss.
-- 📈 **Interactive Deep-Dive & Charts**: 15-minute price action vs VWAP, EMA9, and EMA20 line charts with score metric breakdowns.
+  - **Options**: Directional bias from MTF engine ($\ge 75$), 0–100 Option Chain scoring, PCR analysis, ATM IV & bid/ask spread checks, and max loss risk budgeting.
+- 🛡️ **Defined-Risk Option Spreads & Payoffs**: Automated strike selection (Buy ATM + Sell OTM), net premium calculation, max profit/loss, breakevens, risk/reward ratios, and visual payoff diagrams at expiry.
+- 📈 **Interactive Deep-Dive & Charts**: 15-minute price action vs VWAP line charts and option chain matrix tables (Calls vs Strikes vs Puts).
 - 🔗 **Direct TradingView Deep Links**: Click any symbol to open its live chart directly on TradingView.
-- 📥 **One-Click CSV Export**: Download dated CSV reports of all screened and scored setups.
+- 📥 **One-Click CSV Export**: Download dated CSV reports of screened swing setups, intraday triggers, and options strategies.
 - 💾 **Local Parquet Caching**: Automatically caches daily OHLCV data for swing scans — runs in **< 3 seconds**.
 
 ---
@@ -66,14 +68,6 @@ flowchart TD
     G -- "Fail" --> X
 ```
 
-- **Layer 1 (Hard Filters)**: Monthly RSI ≥ 60, Weekly RSI ≥ 60, Daily RSI ≥ 50, Price > EMA20 > EMA50 > EMA200, ADX ≥ 20, Volume Ratio ≥ 1.0x, 3M & 6M returns > 0, 52W distance ≤ 10%.
-- **Layer 2 (Composite Scoring)**: Final Score = `0.60 × Momentum Score + 0.40 × Entry Score`.
-- **Action Labels**:
-  - `🟢 BUY` (Score ≥ 85)
-  - `🟢 WATCH / PULLBACK` (Score 75–84)
-  - `🟡 WATCHLIST` (Score 65–74)
-  - `🔴 AVOID` (Score < 65)
-
 ---
 
 ### 2. ⚡ Intraday MTF Scanner (Daily · 1h · 15m)
@@ -89,25 +83,32 @@ flowchart TD
     S --> R["Risk Management\n• Stop Loss = Price - (1.5 × ATR)\n• Targets: +1% & +2%\n• Auto Position Sizing Qty"]
 ```
 
-#### Signals & Setups
+---
 
-| Signal | Criteria |
-|---|---|
-| `🟢 STRONG BUY CANDIDATE` | Hard filters pass + Intraday Score ≥ 85 |
-| `🟢 BUY ON CONFIRMATION` | Hard filters pass + Intraday Score ≥ 75 |
-| `🟡 WATCH` | Intraday Score ≥ 65 |
-| `🔴 NO TRADE` | Intraday Score < 65 |
+### 3. 🎯 Options Chain Strategy Layer (MTF + Chain Gate)
 
-| Setup Tag | Pattern Triggers |
-|---|---|
-| `⚡ BREAKOUT` | Price > Prior 20-bar 15m High + Above VWAP + Volume Surge ≥ 1.5x |
-| `🌊 VWAP MOMENTUM` | Above VWAP + EMA9 > EMA20 + 15m RSI ≥ 50 |
-| `🔄 PULLBACK / RECLAIM` | Above VWAP + 15m RSI ≥ 50 |
-| `⏳ WAIT` | Awaiting confirmation |
+Evaluates option chains and generates defined-risk option spreads:
 
-#### Position Sizing Formula
+```mermaid
+flowchart TD
+    MTF["MTF Direction & Momentum Score (Score ≥ 75)"] --> ChainIngest["Option Chain Ingestion\n(expiry, strike, CE/PE, ltp, bid, ask, vol, oi, chg_oi, iv)"]
+    ChainIngest --> ChainScore["Option Chain Analytics & Scoring (0–100)\n• Total OI & Put Support (+20)\n• Change in OI (+15)\n• Volume (+10)\n• ATM IV (+15)\n• Bid/Ask Spread (+15)\n• PCR Alignment (+10)\n• ATM Liquidity (+15)"]
+    ChainScore --> ChainGate{"Chain Gate\nScore ≥ 75 & Liquid?"}
+    ChainGate -- "No" --> GatedOut["NO TRADE"]
+    ChainGate -- "Yes" --> StrategySel["Strategy Selection\n• Bullish → Bull Call Spread\n• Bearish → Bear Put Spread\n• Neutral → Long Strangle"]
+    StrategySel --> StrikeSel["Strike Selection\n• Buy ATM Leg\n• Sell OTM Leg (within 3%)"]
+    StrikeSel --> RiskGate{"Risk Budget Gate\nMax Loss ≤ Risk Budget?"}
+    RiskGate -- "No" --> RiskGated["NO TRADE (Risk Exceeded)"]
+    RiskGate -- "Yes" --> Output["Actionable Strategy Execution Plan\n• Net Premium\n• Max Profit & Max Loss\n• Breakevens\n• Payoff Curve Diagram"]
+```
 
-$$\text{Quantity} = \left\lfloor \frac{\text{Capital} \times (\text{Risk \%} / 100)}{\text{Price} - \text{Stop Loss}} \right\rfloor$$
+#### Strategy & Payoff Formulas
+
+| Strategy | Buy Leg | Sell Leg | Net Premium | Max Loss | Max Profit | Breakeven |
+|---|---|---|---|---|---|---|
+| **Bull Call Spread** | ATM CE | OTM CE ($+3\%$) | $P_{\text{buy}} - P_{\text{sell}}$ | $\text{Net} \times \text{Lot}$ | $(K_2 - K_1 - \text{Net}) \times \text{Lot}$ | $K_1 + \text{Net}$ |
+| **Bear Put Spread** | ATM PE | OTM PE ($-3\%$) | $P_{\text{buy}} - P_{\text{sell}}$ | $\text{Net} \times \text{Lot}$ | $(K_1 - K_2 - \text{Net}) \times \text{Lot}$ | $K_1 - \text{Net}$ |
+| **Long Strangle** | OTM CE ($+1.5\%$) | OTM PE ($-1.5\%$) | $P_{\text{call}} + P_{\text{put}}$ | $\text{Net} \times \text{Lot}$ | Unlimited | $K_{\text{call}} + \text{Net}$, $K_{\text{put}} - \text{Net}$ |
 
 ---
 
@@ -115,13 +116,14 @@ $$\text{Quantity} = \left\lfloor \frac{\text{Capital} \times (\text{Risk \%} / 1
 
 ```
 my-scanner/
-├── streamlit_app.py        # Streamlit application UI & dual-mode controller
+├── streamlit_app.py        # Streamlit application UI & tri-mode controller
 ├── intraday_scanner.py     # Intraday MTF calculation engine & universe presets
+├── options_engine.py       # Options chain analysis, strategy selection & payoff engine
 ├── requirements.txt        # Dependencies (streamlit, yfinance, pandas, numpy, pyarrow)
 ├── cache/                  # Daily Parquet cache for Nifty 500 prices
 └── .specify/               # 📚 Project spec kit
-    ├── spec.md             # Full scoring & UI specification
-    ├── plan.md             # Architecture & implementation plan
-    ├── tasks.md            # Task history & backlog
-    └── constitution.md     # Core design principles
+    ├── spec.md             # Full scoring, technical & options specification (v2.5.0)
+    ├── plan.md             # Architecture & implementation plan (v2.5.0)
+    ├── tasks.md            # Task history & backlog (v2.5.0)
+    └── constitution.md     # Core design principles (v2.5.0)
 ```
