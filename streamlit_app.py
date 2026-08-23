@@ -570,9 +570,20 @@ def style_options_screener_dataframe(df, theme="dark"):
             return "color:#b45309;" if is_light else "color:#ffb800;"
         return "color:#64748b;" if is_light else "color:#9e9e9e;"
 
+    def color_risk_status(val):
+        v = str(val).upper()
+        if "WITHIN" in v or "PASS" in v or "OK" in v:
+            return f"background-color:{c_bull_bg};color:{c_bull_txt};font-weight:600;"
+        elif "EXCEED" in v or "OVER" in v:
+            return "background-color:rgba(217, 119, 6, 0.12);color:#b45309;font-weight:600;" if is_light else "background-color:rgba(255, 184, 0, 0.12);color:#ffb800;font-weight:600;"
+        return "color:#64748b;" if is_light else "color:#9e9e9e;"
+
     styled = df.style \
         .map(color_rec, subset=["Strategy"]) \
         .map(color_verdict, subset=["Chain_Verdict"])
+
+    if "Risk_Status" in df.columns:
+        styled = styled.map(color_risk_status, subset=["Risk_Status"])
 
     format_dict = {
         "Spot":         "\u20b9{:.2f}",
@@ -1619,9 +1630,9 @@ else:
 
             o_k1, o_k2, o_k3, o_k4 = st.columns(4)
             with o_k1:
-                opt_capital = st.number_input("Option Trading Capital (₹)", min_value=10000, max_value=50000000, value=100000, step=10000)
+                opt_capital = st.number_input("Option Trading Capital (₹)", min_value=10000, max_value=50000000, value=200000, step=25000)
             with o_k2:
-                opt_risk_pct = st.number_input("Max Risk % per Trade", min_value=0.1, max_value=3.0, value=0.5, step=0.1)
+                opt_risk_pct = st.slider("Max Risk % per Trade", min_value=0.5, max_value=5.0, value=2.0, step=0.1)
             with o_k3:
                 default_lot = get_lot_size(opt_symbol)
                 opt_lot_size = st.number_input("Contract Lot Size", min_value=1, max_value=10000, value=default_lot, step=25)
@@ -1633,7 +1644,6 @@ else:
 
         if eval_opt_btn or opt_symbol:
             with st.spinner(f"Analyzing option chain and simulating strategies for {opt_symbol}..."):
-                # Fetch recent spot price
                 raw_d = download_ticker_data(opt_symbol, "5d", "1d")
                 spot_price = float(raw_d["Close"].iloc[-1]) if not raw_d.empty else 1300.0
                 opt_chain_df = fetch_or_simulate_option_chain(opt_symbol, spot_price)
@@ -1646,7 +1656,8 @@ else:
                     capital=opt_capital,
                     lot_size=opt_lot_size,
                     max_risk_pct=opt_risk_pct,
-                    prefer_spreads=opt_prefer_spreads
+                    prefer_spreads=opt_prefer_spreads,
+                    enforce_risk_budget=False
                 )
 
             chain_meta = opt_result["chain_analysis"]
@@ -1660,15 +1671,19 @@ else:
                 kc3.metric("PCR", f"{chain_meta['pcr']:.2f}" if pd.notna(chain_meta['pcr']) else "N/A")
                 kc4.metric("ATM IV", f"{chain_meta['avg_atm_iv']:.1f}%" if pd.notna(chain_meta['avg_atm_iv']) else "N/A")
                 kc5.metric("ATM Spread", f"{chain_meta['avg_atm_spread_pct']:.2f}%" if pd.notna(chain_meta['avg_atm_spread_pct']) else "N/A")
-                kc6.metric("Strategy", rec_meta.get("recommendation", "NO TRADE"))
+                kc6.metric("Strategy", opt_result.get("strategy", "NO TRADE"))
 
                 st.markdown("<br>", unsafe_allow_html=True)
 
                 # Strategy Result Card
-                if rec_meta.get("recommendation") != "NO TRADE" and "payoff" in opt_result and opt_result["payoff"]:
+                if opt_result.get("strategy") != "NO TRADE" and "payoff" in opt_result and opt_result["payoff"]:
                     payoff = opt_result["payoff"]
                     legs = opt_result["legs"]
                     st_name = opt_result["strategy"].replace("_", " ")
+                    risk_budget = opt_capital * (opt_risk_pct / 100.0)
+
+                    if not opt_result.get("risk_gate_passed", True):
+                        st.warning(f"⚠️ **Risk Notice**: 1-Lot Maximum Loss (₹{payoff['max_loss']:,.2f}) exceeds your current risk budget (₹{risk_budget:,.2f}). Set Risk % to ≥ {(payoff['max_loss']/opt_capital*100):.1f}% or increase Capital to fit position sizing.")
 
                     st.markdown(f"""
                     <div class="detail-card">
@@ -1680,7 +1695,7 @@ else:
                             <div><div class="hm-label">Max Profit</div><div class="hm-val" style="color:{T['green']};">{'₹' + f"{payoff['max_profit']:,.2f}" if payoff['max_profit'] != float('inf') else 'Unlimited'}</div></div>
                             <div><div class="hm-label">Breakeven</div><div class="hm-val">₹{payoff['breakeven']:,.2f}</div></div>
                             <div><div class="hm-label">Risk / Reward</div><div class="hm-val">{f"{payoff['risk_reward']:.2f}:1" if pd.notna(payoff['risk_reward']) else 'N/A'}</div></div>
-                            <div><div class="hm-label">Risk Budget</div><div class="hm-val">₹{rec_meta.get('max_allowed_loss', 0):,.2f}</div></div>
+                            <div><div class="hm-label">Risk Budget</div><div class="hm-val">₹{risk_budget:,.2f}</div></div>
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
@@ -1749,11 +1764,13 @@ else:
         st.markdown("#### ⚡ Real-Time Multi-Asset Options Strategy Screener")
         st.caption("Screens F&O constituents against MTF Momentum + Option Chain Quality gates.")
 
-        col_s1, col_s2 = st.columns(2)
+        col_s1, col_s2, col_s3 = st.columns([4, 2, 2])
         with col_s1:
             screen_universe = st.multiselect("Select Screener Symbols", FO_SYMBOLS, default=FO_SYMBOLS[:10])
         with col_s2:
-            screen_capital = st.number_input("Screener Capital (₹)", value=100000, step=10000, key="scr_cap")
+            screen_capital = st.number_input("Screener Capital (₹)", value=200000, step=25000, key="scr_cap")
+        with col_s3:
+            screen_risk_pct = st.slider("Risk % per Trade", min_value=0.5, max_value=5.0, value=2.0, step=0.5, key="scr_risk")
 
         run_screener_btn = st.button("🚀 Screen Options Universe", type="primary", use_container_width=True)
 
@@ -1769,11 +1786,20 @@ else:
                     lot = get_lot_size(sym)
                     res = run_options_layer(
                         chain, sp, mtf_score=80.0, direction="BULLISH",
-                        capital=screen_capital, lot_size=lot, max_risk_pct=0.5, prefer_spreads=True
+                        capital=screen_capital, lot_size=lot, max_risk_pct=screen_risk_pct,
+                        prefer_spreads=True, enforce_risk_budget=False
                     )
                     ca = res["chain_analysis"]
                     rc = res["recommendation"]
                     po = res.get("payoff", {})
+                    strat = res.get("strategy", "NO TRADE")
+                    risk_ok = res.get("risk_gate_passed", False)
+                    budget = screen_capital * (screen_risk_pct / 100.0)
+
+                    if strat != "NO TRADE" and po:
+                        status_str = "✅ Within Budget" if risk_ok else f"⚠️ Exceeds Budget (Need ₹{po['max_loss']:,.0f})"
+                    else:
+                        status_str = "⛔ Chain Gated"
 
                     screen_rows.append({
                         "Symbol": sym,
@@ -1781,9 +1807,10 @@ else:
                         "MTF_Score": 80.0,
                         "Chain_Score": ca.get("chain_score", 0),
                         "Chain_Verdict": ca.get("verdict", "NO TRADE"),
+                        "Strategy": strat,
+                        "Risk_Status": status_str,
                         "PCR": ca.get("pcr", np.nan),
                         "ATM_IV": ca.get("avg_atm_iv", np.nan),
-                        "Strategy": rc.get("recommendation", "NO TRADE"),
                         "Net_Premium": po.get("net_premium", np.nan) if po else np.nan,
                         "Max_Loss": po.get("max_loss", np.nan) if po else np.nan,
                         "Max_Profit": po.get("max_profit", np.nan) if po else np.nan,

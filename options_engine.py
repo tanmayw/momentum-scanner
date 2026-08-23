@@ -445,8 +445,9 @@ def run_options_layer(
     direction: str,
     capital: float = 100000.0,
     lot_size: int = 250,
-    max_risk_pct: float = 0.5,
-    prefer_spreads: bool = True
+    max_risk_pct: float = 2.0,
+    prefer_spreads: bool = True,
+    enforce_risk_budget: bool = True
 ) -> dict:
     """
     Complete end-to-end execution of the options analysis layer.
@@ -455,7 +456,14 @@ def run_options_layer(
     rec = recommend_strategy(mtf_score, direction, chain, capital, max_risk_pct, prefer_spreads)
 
     if rec["recommendation"] == "NO TRADE":
-        return {"chain_analysis": chain, "recommendation": rec}
+        return {
+            "chain_analysis": chain,
+            "recommendation": rec,
+            "strategy": "NO TRADE",
+            "risk_gate_passed": False,
+            "legs": None,
+            "payoff": None
+        }
 
     strategy = rec["recommendation"]
     legs = select_strikes(option_chain, spot, strategy)
@@ -465,24 +473,40 @@ def run_options_layer(
             "chain_analysis": chain,
             "recommendation": {
                 "recommendation": "NO TRADE",
+                "strategy_name": strategy,
                 "reason": "Suitable liquid strikes not found in the chain."
-            }
+            },
+            "strategy": "NO TRADE",
+            "risk_gate_passed": False,
+            "legs": None,
+            "payoff": None
         }
 
     payoff = price_strategy(legs, strategy, lot_size)
+    risk_passed = True
 
     if payoff and payoff["max_loss"] > rec["max_allowed_loss"]:
-        rec = {
-            "recommendation": "NO TRADE",
-            "reason": f"Maximum loss (₹{payoff['max_loss']:,.2f}) exceeds risk budget (₹{rec['max_allowed_loss']:,.2f}).",
-            "max_loss": payoff["max_loss"],
-            "max_allowed_loss": rec["max_allowed_loss"]
-        }
+        risk_passed = False
+        if enforce_risk_budget:
+            rec = {
+                "recommendation": "NO TRADE",
+                "strategy_name": strategy,
+                "reason": f"Maximum loss (₹{payoff['max_loss']:,.2f}) exceeds risk budget (₹{rec['max_allowed_loss']:,.2f}). Increase capital or risk %.",
+                "max_loss": payoff["max_loss"],
+                "max_allowed_loss": rec["max_allowed_loss"],
+                "risk_gate_passed": False
+            }
+        else:
+            rec["risk_gate_passed"] = False
+            rec["risk_warning"] = f"Maximum loss (₹{payoff['max_loss']:,.2f}) exceeds risk budget (₹{rec['max_allowed_loss']:,.2f})."
+    else:
+        rec["risk_gate_passed"] = True
 
     return {
         "chain_analysis": chain,
         "recommendation": rec,
         "strategy": strategy,
+        "risk_gate_passed": risk_passed,
         "legs": legs,
         "payoff": payoff
     }
