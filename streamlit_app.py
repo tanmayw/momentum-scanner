@@ -1832,7 +1832,12 @@ else:
         with col_s2:
             screen_risk_pct = st.slider("Risk % per Trade", min_value=0.5, max_value=5.0, value=2.0, step=0.5, key="scr_risk")
         with col_s3:
-            screen_direction = st.selectbox("Market Bias Filter", ["BULLISH", "BEARISH", "NEUTRAL"], index=0, key="scr_dir")
+            screen_direction = st.selectbox(
+                "Market Bias Filter",
+                ["AUTO (Detect from MTF Momentum)", "BULLISH", "BEARISH", "NEUTRAL"],
+                index=0,
+                key="scr_dir"
+            )
 
         st.markdown("<br>", unsafe_allow_html=True)
         run_screener_btn = st.button("🚀 Screen Options Universe", type="primary", use_container_width=True)
@@ -1843,12 +1848,36 @@ else:
 
             for i, sym in enumerate(screen_universe):
                 try:
-                    raw_d = download_ticker_data(sym, "5d", "1d")
+                    raw_d = download_ticker_data(sym, "30d", "1d")
                     sp = float(raw_d["Close"].iloc[-1]) if not raw_d.empty else 1000.0
+
+                    # Dynamic direction detection if AUTO mode
+                    if "AUTO" in screen_direction:
+                        if len(raw_d) >= 20:
+                            c = raw_d["Close"]
+                            e20 = float(ema(c, 20).iloc[-1])
+                            e50 = float(ema(c, 50).iloc[-1]) if len(c) >= 50 else e20 * 0.98
+                            r_val = float(rsi(c).iloc[-1])
+                            if sp > e20 and r_val >= 50:
+                                stock_dir = "BULLISH"
+                                mtf_val = min(max(r_val * 1.2, 75.0), 95.0)
+                            elif sp < e20 and r_val <= 45:
+                                stock_dir = "BEARISH"
+                                mtf_val = min(max((100 - r_val) * 1.2, 75.0), 95.0)
+                            else:
+                                stock_dir = "NEUTRAL"
+                                mtf_val = 80.0
+                        else:
+                            stock_dir = "BULLISH"
+                            mtf_val = 80.0
+                    else:
+                        stock_dir = screen_direction
+                        mtf_val = 80.0
+
                     chain = fetch_or_simulate_option_chain(sym, sp)
                     lot = get_lot_size(sym)
                     res = run_options_layer(
-                        chain, sp, mtf_score=80.0, direction=screen_direction,
+                        chain, sp, mtf_score=mtf_val, direction=stock_dir,
                         capital=screen_capital, lot_size=lot, max_risk_pct=screen_risk_pct,
                         prefer_spreads=True, enforce_risk_budget=False
                     )
