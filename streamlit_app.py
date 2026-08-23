@@ -1848,6 +1848,7 @@ else:
 
         if run_screener_btn and screen_universe:
             screen_rows = []
+            screen_results_map = {}
             scr_prog = st.progress(0.0, text="Evaluating Options Strategies...")
 
             for i, sym in enumerate(screen_universe):
@@ -1951,6 +1952,12 @@ else:
                         "Breakeven": po.get("breakeven", np.nan) if po else np.nan,
                         "RR_Ratio": po.get("risk_reward", np.nan) if po else np.nan,
                     })
+
+                    screen_results_map[sym] = {
+                        "sym": sym, "sp": sp, "bias": composite_bias,
+                        "mtf_score": real_mtf_score, "ca": ca, "res": res,
+                        "lot": lot, "capital": screen_capital, "risk_pct": screen_risk_pct
+                    }
                 except Exception:
                     pass
                 scr_prog.progress((i + 1) / len(screen_universe), text=f"Screening {sym}...")
@@ -1958,23 +1965,148 @@ else:
             scr_prog.empty()
 
             if screen_rows:
-                scr_df = pd.DataFrame(screen_rows)
-                scr_df["Symbol"] = scr_df["Symbol"].apply(
-                    lambda s: f"https://in.tradingview.com/chart/?symbol=NSE:{s}"
+                st.session_state.options_screen_rows = screen_rows
+                st.session_state.options_screen_map = screen_results_map
+
+        # Render Screener Table & In-Page Strategy Inspector
+        if "options_screen_rows" in st.session_state and st.session_state.options_screen_rows:
+            s_rows = st.session_state.options_screen_rows
+            s_map = st.session_state.options_screen_map
+
+            scr_df = pd.DataFrame(s_rows)
+            display_df = scr_df.copy()
+            display_df["Symbol"] = display_df["Symbol"].apply(
+                lambda s: f"https://in.tradingview.com/chart/?symbol=NSE:{s}"
+            )
+            styled_scr = style_options_screener_dataframe(display_df, theme=st.session_state.theme)
+            st.dataframe(
+                styled_scr,
+                column_config={
+                    "Symbol": st.column_config.LinkColumn(
+                        "Symbol",
+                        help="Click to open chart on TradingView",
+                        display_text=r"https://in\.tradingview\.com/chart/\?symbol=NSE:(.*)"
+                    )
+                },
+                use_container_width=True,
+                hide_index=True
+            )
+
+            # In-Page Strategy Inspector & Payoff Viewer
+            st.markdown("---")
+            st.markdown("### 🔎 Strategy Deep-Dive & Payoff Inspector")
+            st.caption("Inspect full option legs, Greeks/IV metrics, and the interactive payoff diagram for any stock in your screener results without switching tabs.")
+
+            all_screened_syms = [r["Symbol"] for r in s_rows]
+            insp_col1, _ = st.columns([2, 2])
+            with insp_col1:
+                chosen_inspect_sym = st.selectbox(
+                    "Select Stock to Inspect Strategy Details",
+                    all_screened_syms,
+                    index=0,
+                    key="chosen_inspect_sym_box"
                 )
-                styled_scr = style_options_screener_dataframe(scr_df, theme=st.session_state.theme)
-                st.dataframe(
-                    styled_scr,
-                    column_config={
-                        "Symbol": st.column_config.LinkColumn(
-                            "Symbol",
-                            help="Click to open chart on TradingView",
-                            display_text=r"https://in\.tradingview\.com/chart/\?symbol=NSE:(.*)"
-                        )
-                    },
-                    use_container_width=True,
-                    hide_index=True
-                )
+
+            if chosen_inspect_sym and chosen_inspect_sym in s_map:
+                item = s_map[chosen_inspect_sym]
+                opt_res = item["res"]
+                sp_val = item["sp"]
+                ca_val = item["ca"]
+                rec_val = opt_res.get("recommendation", {})
+                payoff_val = opt_res.get("payoff", {})
+                legs_val = opt_res.get("legs", {})
+                strat_name = opt_res.get("strategy", "NO TRADE")
+                lot_val = item["lot"]
+                cap_val = item["capital"]
+                r_pct = item["risk_pct"]
+                r_budget = cap_val * (r_pct / 100.0)
+
+                # 6 Top Metric Cards
+                im1, im2, im3, im4, im5, im6 = st.columns(6)
+                im1.metric("Underlying Spot", f"₹{sp_val:.2f}")
+                im2.metric("Bias", item["bias"])
+                im3.metric("MTF Score", f"{item['mtf_score']:.0f}/100")
+                im4.metric("Chain Score", f"{ca_val.get('chain_score', 0):.0f}/100")
+                im5.metric("Chain Verdict", ca_val.get("verdict", "NO TRADE"))
+                im6.metric("Strategy", strat_name)
+
+                if strat_name != "NO TRADE" and payoff_val and legs_val:
+                    st_clean = strat_name.replace("_", " ")
+
+                    if not opt_res.get("risk_gate_passed", True):
+                        st.warning(f"⚠️ **Risk Budget Notice**: 1-Lot Max Loss (₹{payoff_val['max_loss']:,.2f}) exceeds your ₹{r_budget:,.2f} risk budget ({r_pct}% of ₹{cap_val:,.0f}). Set Risk % to ≥ {(payoff_val['max_loss']/cap_val*100):.1f}% or increase capital to trade.")
+
+                    st.markdown(f"""
+                    <div class="detail-card">
+                        <div class="detail-title">🏆 Strategy Execution Plan &mdash; {st_clean} ({chosen_inspect_sym})</div>
+                        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:1rem; margin-top:0.8rem;">
+                            <div><div class="hm-label">Net Premium</div><div class="hm-val" style="color:{T['blue']};">₹{payoff_val['net_premium']:.2f}</div></div>
+                            <div><div class="hm-label">Max Loss (1 Lot)</div><div class="hm-val" style="color:{T['red']};">₹{payoff_val['max_loss']:,.2f}</div></div>
+                            <div><div class="hm-label">Max Profit</div><div class="hm-val" style="color:{T['green']};">{'₹' + f"{payoff_val['max_profit']:,.2f}" if payoff_val['max_profit'] != float('inf') else 'Unlimited'}</div></div>
+                            <div><div class="hm-label">Breakeven</div><div class="hm-val">₹{payoff_val['breakeven']:,.2f}</div></div>
+                            <div><div class="hm-label">Risk / Reward</div><div class="hm-val">{f"{payoff_val['risk_reward']:.2f}:1" if pd.notna(payoff_val['risk_reward']) else 'N/A'}</div></div>
+                            <div><div class="hm-label">Lot Size</div><div class="hm-val">{lot_val} shares</div></div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    # Selected Legs Table
+                    st.markdown(f"#### 📑 Strategy Legs ({st_clean})")
+                    leg_rows = []
+                    if "buy" in legs_val:
+                        leg_rows.append({
+                            "Action": "BUY (Long)",
+                            "Option": f"{legs_val['buy'].strike:.0f} {legs_val['buy'].option_type}",
+                            "LTP": f"₹{legs_val['buy'].ltp:.2f}",
+                            "Bid / Ask": f"₹{legs_val['buy'].bid:.2f} / ₹{legs_val['buy'].ask:.2f}",
+                            "IV": f"{legs_val['buy'].iv:.1f}%",
+                            "OI": f"{legs_val['buy'].oi:,}",
+                            "Expiry": str(legs_val['buy'].expiry)
+                        })
+                    if "sell" in legs_val:
+                        leg_rows.append({
+                            "Action": "SELL (Short)",
+                            "Option": f"{legs_val['sell'].strike:.0f} {legs_val['sell'].option_type}",
+                            "LTP": f"₹{legs_val['sell'].ltp:.2f}",
+                            "Bid / Ask": f"₹{legs_val['sell'].bid:.2f} / ₹{legs_val['sell'].ask:.2f}",
+                            "IV": f"{legs_val['sell'].iv:.1f}%",
+                            "OI": f"{legs_val['sell'].oi:,}",
+                            "Expiry": str(legs_val['sell'].expiry)
+                        })
+                    if "call" in legs_val and "put" in legs_val:
+                        leg_rows.append({
+                            "Action": "BUY CALL",
+                            "Option": f"{legs_val['call'].strike:.0f} CE",
+                            "LTP": f"₹{legs_val['call'].ltp:.2f}",
+                            "Bid / Ask": f"₹{legs_val['call'].bid:.2f} / ₹{legs_val['call'].ask:.2f}",
+                            "IV": f"{legs_val['call'].iv:.1f}%",
+                            "OI": f"{legs_val['call'].oi:,}",
+                            "Expiry": str(legs_val['call'].expiry)
+                        })
+                        leg_rows.append({
+                            "Action": "BUY PUT",
+                            "Option": f"{legs_val['put'].strike:.0f} PE",
+                            "LTP": f"₹{legs_val['put'].ltp:.2f}",
+                            "Bid / Ask": f"₹{legs_val['put'].bid:.2f} / ₹{legs_val['put'].ask:.2f}",
+                            "IV": f"{legs_val['put'].iv:.1f}%",
+                            "OI": f"{legs_val['put'].oi:,}",
+                            "Expiry": str(legs_val['put'].expiry)
+                        })
+
+                    st.dataframe(pd.DataFrame(leg_rows), use_container_width=True, hide_index=True)
+
+                    # Payoff Curve Diagram
+                    st.markdown(f"#### 📊 Interactive Payoff Diagram at Expiry ({chosen_inspect_sym})")
+                    curve = generate_payoff_curve(strat_name, legs_val, sp_val, lot_size=lot_val)
+                    if not curve.empty:
+                        st.line_chart(curve.set_index("Spot_at_Expiry")[["PnL"]])
+                else:
+                    st.info(f"Strategy Gated for {chosen_inspect_sym}: {ca_val.get('verdict', 'Option Chain requirements not met')}")
+
+                # Diagnostics checklist
+                with st.expander(f"🔍 Option Chain Diagnostics Checklist &mdash; {chosen_inspect_sym}", expanded=False):
+                    for r in ca_val.get("reasons", []):
+                        st.markdown(f"- ✅ {r}")
 
     # ── TAB 3: Option Chain Matrix Table ──
     with tab_opt_chain:
