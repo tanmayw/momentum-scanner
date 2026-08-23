@@ -1807,31 +1807,39 @@ else:
 
             scr_df = pd.DataFrame(s_rows)
 
-            # ── Render results table (plain symbols, no TradingView links so user can click selectbox instead)
-            st.dataframe(
+            # ── Render results table with row-click selection ──
+            st.caption("👆 Click any row to open that stock's Strategy Deep-Dive below.")
+            tbl_selection = st.dataframe(
                 style_options_screener_dataframe(scr_df.copy(), theme=st.session_state.theme),
                 use_container_width=True,
-                hide_index=True
+                hide_index=True,
+                selection_mode="single-row",
+                on_select="rerun",
+                key="scr_table_selection"
             )
+
+            # Sync clicked row → inspector
+            all_screened_syms = [r["Symbol"] for r in s_rows]
+            selected_rows = tbl_selection.selection.get("rows", []) if tbl_selection and hasattr(tbl_selection, "selection") else []
+            if selected_rows:
+                clicked_sym = all_screened_syms[selected_rows[0]]
+                st.session_state.chosen_inspect_sym_box = clicked_sym
+
+            # Initialise default selection
+            if "chosen_inspect_sym_box" not in st.session_state or st.session_state.chosen_inspect_sym_box not in all_screened_syms:
+                st.session_state.chosen_inspect_sym_box = all_screened_syms[0]
 
             # ── In-Page Strategy Inspector & Payoff Viewer ──
             st.markdown("---")
             st.markdown("### 🔎 Strategy Deep-Dive & Payoff Inspector")
-            st.caption("Select any stock from the screener results below to view its full option strategy, legs, payoff diagram and chain diagnostics.")
-
-            all_screened_syms = [r["Symbol"] for r in s_rows]
-
-            # Preserve user's selection across reruns
-            if "chosen_inspect_sym_box" not in st.session_state:
-                st.session_state.chosen_inspect_sym_box = all_screened_syms[0]
+            st.caption("Click any row in the table above — or use the dropdown — to inspect strategy, legs, payoff diagram and chain diagnostics.")
 
             insp_col1, insp_col2 = st.columns([2, 2])
             with insp_col1:
                 chosen_inspect_sym = st.selectbox(
-                    "🔍 Click a stock to inspect its Options Strategy",
+                    "🔍 Selected Stock",
                     all_screened_syms,
-                    index=all_screened_syms.index(st.session_state.chosen_inspect_sym_box)
-                          if st.session_state.chosen_inspect_sym_box in all_screened_syms else 0,
+                    index=all_screened_syms.index(st.session_state.chosen_inspect_sym_box),
                     key="chosen_inspect_sym_box"
                 )
             with insp_col2:
