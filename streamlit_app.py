@@ -1613,19 +1613,38 @@ else:
 
     # ── TAB 1: Single Stock Strategy & Payoff ──
     with tab_opt_single:
-        FO_SYMBOLS = [
-            "RELIANCE", "NIFTY", "BANKNIFTY", "HDFCBANK", "ICICIBANK", "SBIN",
-            "INFY", "TCS", "BHARTIARTL", "LT", "TRENT", "HAL", "BEL", "DIXON",
-            "POLYCAB", "PERSISTENT", "COFORGE", "MCX", "ZOMATO", "TATAMOTORS", "M&M"
-        ]
+        # Build comprehensive symbol list from presets
+        all_preset_syms = sorted(list(set([s for syms in PRESET_UNIVERSES.values() for s in syms] + ["NIFTY", "BANKNIFTY"])))
 
         with st.expander("⚙️ Options Strategy & Risk Parameters", expanded=True):
-            o_c1, o_c2, o_c3 = st.columns(3)
+            o_u1, o_u2 = st.columns([1, 2])
+            with o_u1:
+                single_universe_mode = st.selectbox(
+                    "Stock Universe Filter",
+                    ["Nifty 50 Liquid Top (20 Stocks)", "High Momentum & Beta (F&O)", "Nifty Bank & Financials", "Nifty IT & Tech", "Nifty Auto & Metals", "All F&O Symbols"],
+                    index=0,
+                    key="opt_single_u_mode"
+                )
+                if "Nifty 50 Liquid" in single_universe_mode:
+                    active_symbol_choices = PRESET_UNIVERSES["Nifty 50 Liquid Top"] + ["NIFTY", "BANKNIFTY"]
+                elif "High Momentum" in single_universe_mode:
+                    active_symbol_choices = PRESET_UNIVERSES["High Momentum & Beta (F&O)"]
+                elif "Bank" in single_universe_mode:
+                    active_symbol_choices = PRESET_UNIVERSES["Nifty Bank & Financials"]
+                elif "IT" in single_universe_mode:
+                    active_symbol_choices = PRESET_UNIVERSES["Nifty IT & Tech"]
+                elif "Auto" in single_universe_mode:
+                    active_symbol_choices = PRESET_UNIVERSES["Nifty Auto & Metals"]
+                else:
+                    active_symbol_choices = all_preset_syms
+
+            with o_u2:
+                opt_symbol = st.selectbox("Select Underlying Symbol", active_symbol_choices, index=0)
+
+            o_c1, o_c2 = st.columns(2)
             with o_c1:
-                opt_symbol = st.selectbox("Underlying Symbol", FO_SYMBOLS, index=0)
-            with o_c2:
                 opt_direction = st.selectbox("MTF Direction Bias", ["BULLISH", "BEARISH", "NEUTRAL"], index=0)
-            with o_c3:
+            with o_c2:
                 opt_mtf_score = st.slider("Underlying MTF Score", min_value=40, max_value=100, value=85)
 
             o_k1, o_k2, o_k3, o_k4 = st.columns(4)
@@ -1764,14 +1783,58 @@ else:
         st.markdown("#### ⚡ Real-Time Multi-Asset Options Strategy Screener")
         st.caption("Screens F&O constituents against MTF Momentum + Option Chain Quality gates.")
 
-        col_s1, col_s2, col_s3 = st.columns([4, 2, 2])
-        with col_s1:
-            screen_universe = st.multiselect("Select Screener Symbols", FO_SYMBOLS, default=FO_SYMBOLS[:10])
-        with col_s2:
-            screen_capital = st.number_input("Screener Capital (₹)", value=200000, step=25000, key="scr_cap")
-        with col_s3:
-            screen_risk_pct = st.slider("Risk % per Trade", min_value=0.5, max_value=5.0, value=2.0, step=0.5, key="scr_risk")
+        st.markdown('<div class="ctrl-section-title">&#128394; Options Universe Selection</div>', unsafe_allow_html=True)
+        opt_u_mode = st.radio(
+            "Options Universe Mode",
+            ["Preset Index/Sector", "Top Candidates from Intraday Scan", "Top Candidates from Swing Scan", "Custom Symbols"],
+            horizontal=True,
+            label_visibility="collapsed",
+            key="opt_screener_u_mode"
+        )
 
+        if opt_u_mode == "Preset Index/Sector":
+            opt_preset_name = st.selectbox(
+                "Select Preset Universe",
+                list(PRESET_UNIVERSES.keys()),
+                index=0,
+                key="opt_screener_preset_choice"
+            )
+            screen_universe = PRESET_UNIVERSES[opt_preset_name]
+            st.caption(f"Symbols ({len(screen_universe)}): {', '.join(screen_universe)}")
+        elif opt_u_mode == "Top Candidates from Intraday Scan":
+            if "intraday_results" in st.session_state and not st.session_state.intraday_results.empty:
+                top_intra_syms = st.session_state.intraday_results["Symbol"].head(20).tolist()
+                screen_universe = top_intra_syms
+                st.success(f"Loaded {len(screen_universe)} candidates from your previous Intraday scan!")
+            else:
+                st.warning("No Intraday scan results in this session yet. Falling back to Nifty 50 Liquid Top (20 Stocks).")
+                screen_universe = PRESET_UNIVERSES["Nifty 50 Liquid Top"]
+        elif opt_u_mode == "Top Candidates from Swing Scan":
+            if "swing_results" in st.session_state and not st.session_state.swing_results.empty:
+                top_swing_syms = st.session_state.swing_results["Symbol"].head(20).tolist()
+                screen_universe = top_swing_syms
+                st.success(f"Loaded {len(screen_universe)} candidates from your previous Swing scan!")
+            else:
+                st.warning("No Swing scan results in this session yet. Falling back to Nifty 50 Liquid Top (20 Stocks).")
+                screen_universe = PRESET_UNIVERSES["Nifty 50 Liquid Top"]
+        else:
+            custom_opt_input = st.text_area(
+                "F&O Symbols (comma-separated)",
+                "RELIANCE, HDFCBANK, ICICIBANK, INFY, TCS, BHARTIARTL, LT, SBIN, TRENT, HAL, BEL, MCX",
+                key="custom_opt_universe"
+            )
+            screen_universe = [s.strip().upper() for s in custom_opt_input.split(",") if s.strip()]
+
+        st.markdown('<div class="ctrl-section-title">&#128176; Screener Capital &amp; Risk Parameters</div>', unsafe_allow_html=True)
+        col_s1, col_s2, col_s3 = st.columns([3, 3, 3])
+        with col_s1:
+            screen_capital = st.number_input("Screener Capital (₹)", value=200000, step=25000, key="scr_cap")
+        with col_s2:
+            screen_risk_pct = st.slider("Risk % per Trade", min_value=0.5, max_value=5.0, value=2.0, step=0.5, key="scr_risk")
+        with col_s3:
+            screen_direction = st.selectbox("Market Bias Filter", ["BULLISH", "BEARISH", "NEUTRAL"], index=0, key="scr_dir")
+
+        st.markdown("<br>", unsafe_allow_html=True)
         run_screener_btn = st.button("🚀 Screen Options Universe", type="primary", use_container_width=True)
 
         if run_screener_btn and screen_universe:
@@ -1785,7 +1848,7 @@ else:
                     chain = fetch_or_simulate_option_chain(sym, sp)
                     lot = get_lot_size(sym)
                     res = run_options_layer(
-                        chain, sp, mtf_score=80.0, direction="BULLISH",
+                        chain, sp, mtf_score=80.0, direction=screen_direction,
                         capital=screen_capital, lot_size=lot, max_risk_pct=screen_risk_pct,
                         prefer_spreads=True, enforce_risk_budget=False
                     )
@@ -1844,9 +1907,21 @@ else:
 
     # ── TAB 3: Option Chain Matrix Table ──
     with tab_opt_chain:
-        st.markdown(f"#### 📊 Option Chain Matrix &mdash; {opt_symbol}")
-        if 'opt_chain_df' in locals() and not opt_chain_df.empty:
-            chain_disp = opt_chain_df.copy()
+        matrix_sym_choices = PRESET_UNIVERSES["Nifty 50 Liquid Top"] + ["NIFTY", "BANKNIFTY"]
+        mat_col1, mat_col2 = st.columns([3, 1])
+        with mat_col1:
+            matrix_symbol = st.selectbox("Select Underlying for Option Chain Matrix", matrix_sym_choices, index=0, key="opt_matrix_symbol_choice")
+        with mat_col2:
+            st.markdown("<br>", unsafe_allow_html=True)
+            load_matrix_btn = st.button("📊 Refresh Matrix", type="secondary", use_container_width=True)
+
+        with st.spinner(f"Loading Option Chain Matrix for {matrix_symbol}..."):
+            raw_mat_d = download_ticker_data(matrix_symbol, "5d", "1d")
+            sp_mat = float(raw_mat_d["Close"].iloc[-1]) if not raw_mat_d.empty else 1300.0
+            mat_chain_df = fetch_or_simulate_option_chain(matrix_symbol, sp_mat)
+
+        if not mat_chain_df.empty:
+            chain_disp = mat_chain_df.copy()
             c_side = chain_disp[chain_disp.option_type == "CE"].set_index("strike")
             p_side = chain_disp[chain_disp.option_type == "PE"].set_index("strike")
 
@@ -1862,6 +1937,8 @@ else:
                 "Put Chg OI": p_side["change_oi"],
                 "Put OI": p_side["oi"],
             }).dropna(subset=["Call LTP", "Put LTP"]).sort_index()
+
+            st.markdown(f"**Spot Price**: ₹{sp_mat:.2f} &bull; **ATM Strike**: ₹{round(sp_mat / (50 if sp_mat > 2000 else 20)) * (50 if sp_mat > 2000 else 20):.0f}")
 
             st.dataframe(
                 combined_matrix.style.format({
