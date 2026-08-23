@@ -552,6 +552,14 @@ def style_options_screener_dataframe(df, theme="dark"):
     c_strang_bg = "rgba(147, 51, 234, 0.12)" if is_light else "rgba(187, 134, 252, 0.15)"
     c_strang_txt= "#7e22ce" if is_light else "#bb86fc"
 
+    def color_bias(val):
+        v = str(val).upper()
+        if "BULL" in v:
+            return f"background-color:{c_bull_bg};color:{c_bull_txt};font-weight:700;"
+        elif "BEAR" in v:
+            return f"background-color:{c_bear_bg};color:{c_bear_txt};font-weight:700;"
+        return f"background-color:{c_strang_bg};color:{c_strang_txt};font-weight:700;"
+
     def color_rec(val):
         v = str(val).upper()
         if "BULL" in v or "CALL" in v:
@@ -581,6 +589,9 @@ def style_options_screener_dataframe(df, theme="dark"):
     styled = df.style \
         .map(color_rec, subset=["Strategy"]) \
         .map(color_verdict, subset=["Chain_Verdict"])
+
+    if "Bias" in df.columns:
+        styled = styled.map(color_bias, subset=["Bias"])
 
     if "Risk_Status" in df.columns:
         styled = styled.map(color_risk_status, subset=["Risk_Status"])
@@ -1826,18 +1837,11 @@ else:
             screen_universe = [s.strip().upper() for s in custom_opt_input.split(",") if s.strip()]
 
         st.markdown('<div class="ctrl-section-title">&#128176; Screener Capital &amp; Risk Parameters</div>', unsafe_allow_html=True)
-        col_s1, col_s2, col_s3 = st.columns([3, 3, 3])
+        col_s1, col_s2 = st.columns([1, 1])
         with col_s1:
             screen_capital = st.number_input("Screener Capital (₹)", value=200000, step=25000, key="scr_cap")
         with col_s2:
             screen_risk_pct = st.slider("Risk % per Trade", min_value=0.5, max_value=5.0, value=2.0, step=0.5, key="scr_risk")
-        with col_s3:
-            screen_direction = st.selectbox(
-                "Market Bias Filter",
-                ["AUTO (Detect from MTF Momentum)", "BULLISH", "BEARISH", "NEUTRAL"],
-                index=0,
-                key="scr_dir"
-            )
 
         st.markdown("<br>", unsafe_allow_html=True)
         run_screener_btn = st.button("🚀 Screen Options Universe", type="primary", use_container_width=True)
@@ -1848,45 +1852,82 @@ else:
 
             for i, sym in enumerate(screen_universe):
                 try:
-                    raw_d = download_ticker_data(sym, "30d", "1d")
-                    sp = float(raw_d["Close"].iloc[-1]) if not raw_d.empty else 1000.0
+                    # 1. Multi-Timeframe Technical & Momentum Evaluation
+                    d_df, h_df, m_df = download_intraday_timeframes(sym)
+                    intra_eval = evaluate_stock_intraday(sym, d_df=d_df, h_df=h_df, m_df=m_df)
 
-                    # Dynamic direction detection if AUTO mode
-                    if "AUTO" in screen_direction:
-                        if len(raw_d) >= 20:
-                            c = raw_d["Close"]
-                            e20 = float(ema(c, 20).iloc[-1])
-                            e50 = float(ema(c, 50).iloc[-1]) if len(c) >= 50 else e20 * 0.98
-                            r_val = float(rsi(c).iloc[-1])
-                            if sp > e20 and r_val >= 50:
-                                stock_dir = "BULLISH"
-                                mtf_val = min(max(r_val * 1.2, 75.0), 95.0)
-                            elif sp < e20 and r_val <= 45:
-                                stock_dir = "BEARISH"
-                                mtf_val = min(max((100 - r_val) * 1.2, 75.0), 95.0)
-                            else:
-                                stock_dir = "NEUTRAL"
-                                mtf_val = 80.0
+                    if intra_eval and intra_eval.get("Score") is not None and intra_eval.get("Price") is not None:
+                        sp = float(intra_eval["Price"])
+                        real_mtf_score = float(intra_eval["Score"])
+                        d_rsi_val = float(intra_eval["Daily_RSI"])
+                        h_rsi_val = float(intra_eval["Hourly_RSI"])
+                        m_rsi_val = float(intra_eval["M15_RSI"])
+                        d_tr = intra_eval["Daily_Trend"]
+                        h_tr = intra_eval["Hourly_Trend"]
+                        vwap_val = float(intra_eval["VWAP"])
+
+                        if (d_rsi_val >= 50 and h_rsi_val >= 50 and sp >= vwap_val) or (d_tr and h_tr):
+                            tech_dir = "BULLISH"
+                        elif (d_rsi_val < 48 and h_rsi_val < 48 and sp < vwap_val) or (not d_tr and not h_tr):
+                            tech_dir = "BEARISH"
                         else:
-                            stock_dir = "BULLISH"
-                            mtf_val = 80.0
+                            tech_dir = "NEUTRAL"
                     else:
-                        stock_dir = screen_direction
-                        mtf_val = 80.0
+                        raw_d = download_ticker_data(sym, "60d", "1d")
+                        sp = float(raw_d["Close"].iloc[-1]) if not raw_d.empty else 1000.0
+                        c = raw_d["Close"]
+                        e20 = float(ema(c, 20).iloc[-1])
+                        e50 = float(ema(c, 50).iloc[-1]) if len(c) >= 50 else e20 * 0.98
+                        r_val = float(rsi(c).iloc[-1])
+                        if sp > e20 > e50 and r_val >= 50:
+                            tech_dir = "BULLISH"
+                            real_mtf_score = min(max(r_val * 1.25, 60.0), 95.0)
+                        elif sp < e20 < e50 and r_val <= 45:
+                            tech_dir = "BEARISH"
+                            real_mtf_score = min(max((100 - r_val) * 1.25, 60.0), 95.0)
+                        else:
+                            tech_dir = "NEUTRAL"
+                            real_mtf_score = 65.0
 
+                    # 2. Option Chain Analytics & OI Bias
                     chain = fetch_or_simulate_option_chain(sym, sp)
                     lot = get_lot_size(sym)
+                    ca = analyze_option_chain(chain, sp, tech_dir)
+                    pcr_val = ca.get("pcr", 1.0)
+                    c_side = chain[chain.option_type == "CE"]
+                    p_side = chain[chain.option_type == "PE"]
+                    p_chg = p_side["change_oi"].sum()
+                    c_chg = c_side["change_oi"].sum()
+
+                    if p_chg > c_chg and pcr_val >= 0.95:
+                        oi_dir = "BULLISH"
+                    elif c_chg > p_chg and pcr_val <= 0.90:
+                        oi_dir = "BEARISH"
+                    else:
+                        oi_dir = "NEUTRAL"
+
+                    # 3. Composite BIAS (MTF Momentum + OI Flow)
+                    if tech_dir == "BULLISH" and oi_dir in ("BULLISH", "NEUTRAL"):
+                        composite_bias = "BULLISH"
+                    elif tech_dir == "BEARISH" and oi_dir in ("BEARISH", "NEUTRAL"):
+                        composite_bias = "BEARISH"
+                    elif oi_dir == "BULLISH" and tech_dir == "NEUTRAL":
+                        composite_bias = "BULLISH"
+                    elif oi_dir == "BEARISH" and tech_dir == "NEUTRAL":
+                        composite_bias = "BEARISH"
+                    else:
+                        composite_bias = "NEUTRAL"
+
+                    # 4. Strategy Evaluation
                     res = run_options_layer(
-                        chain, sp, mtf_score=mtf_val, direction=stock_dir,
+                        chain, sp, mtf_score=real_mtf_score, direction=composite_bias,
                         capital=screen_capital, lot_size=lot, max_risk_pct=screen_risk_pct,
                         prefer_spreads=True, enforce_risk_budget=False
                     )
-                    ca = res["chain_analysis"]
                     rc = res["recommendation"]
                     po = res.get("payoff", {})
                     strat = res.get("strategy", "NO TRADE")
                     risk_ok = res.get("risk_gate_passed", False)
-                    budget = screen_capital * (screen_risk_pct / 100.0)
 
                     if strat != "NO TRADE" and po:
                         status_str = "✅ Within Budget" if risk_ok else f"⚠️ Exceeds Budget (Need ₹{po['max_loss']:,.0f})"
@@ -1896,7 +1937,8 @@ else:
                     screen_rows.append({
                         "Symbol": sym,
                         "Spot": sp,
-                        "MTF_Score": 80.0,
+                        "Bias": composite_bias,
+                        "MTF_Score": real_mtf_score,
                         "Chain_Score": ca.get("chain_score", 0),
                         "Chain_Verdict": ca.get("verdict", "NO TRADE"),
                         "Strategy": strat,
