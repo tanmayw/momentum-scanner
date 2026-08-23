@@ -58,7 +58,7 @@ Scans the entire Nifty 500 universe using a two-layer model:
 ```mermaid
 flowchart TD
     A["Nifty 500 (~500 Tickers)"] --> B["Parquet Cache Check (< 2s) / yfinance Download"]
-    B --> C["Benchmark Comparison (^CRSLDX Nifty 500)"]
+    B --> C["Benchmark Comparison (^NSEI Nifty 50)"]
     C --> D["Multi-Timeframe Indicator Engine (D, W, M)"]
     D --> E{"Layer 1: Hard Filters\n(EMA align, RSI mins, ADX, 52W)"}
     E -- "Pass" --> F["Layer 2: Composite Scoring\n(Momentum 60% + Entry 40%)"]

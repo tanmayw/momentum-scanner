@@ -149,7 +149,7 @@ def download_prices(symbols):
     return all_data
 
 def get_benchmark():
-    for ticker in ["^CRSLDX", "^NSEI"]:
+    for ticker in ["^NSEI", "^CRSLDX"]:
         try:
             raw = yf.download(ticker, period="3y", interval="1d",
                               auto_adjust=True, progress=False)
@@ -1043,7 +1043,7 @@ if st.session_state.app_view == "Swing Momentum":
         <div class="hero-meta">
             <div><div class="hm-label">Universe</div><div class="hm-val">Nifty 500</div></div>
             <div><div class="hm-label">Timeframes</div><div class="hm-val">Daily &bull; Weekly &bull; Monthly</div></div>
-            <div><div class="hm-label">Benchmark</div><div class="hm-val">Nifty 500 (^CRSLDX)</div></div>
+            <div><div class="hm-label">Benchmark</div><div class="hm-val">Nifty 50 (^NSEI)</div></div>
             <div><div class="hm-label">As of</div><div class="hm-val">{now_str}</div></div>
         </div>
     </div>
@@ -1185,7 +1185,7 @@ if st.session_state.app_view == "Swing Momentum":
                             <div class="rb-count">{len(view)} Results</div>
                             <div class="rb-label">Ranked by Final Score &bull; {datetime.now().strftime('%d %b %Y, %H:%M')}</div>
                         </div>
-                        <div class="rb-meta">Source: {source} &nbsp;|&nbsp; Benchmark: Nifty 500</div>
+                        <div class="rb-meta">Source: {source} &nbsp;|&nbsp; Benchmark: Nifty 50 (^NSEI)</div>
                     </div>
                     """, unsafe_allow_html=True)
 
