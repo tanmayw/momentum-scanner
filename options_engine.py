@@ -7,6 +7,8 @@ import math
 import numpy as np
 import pandas as pd
 import yfinance as yf
+import requests
+from urllib.parse import quote
 from datetime import datetime, timedelta
 
 REQUIRED_COLUMNS = {"expiry", "strike", "option_type", "ltp", "bid", "ask", "volume", "oi", "change_oi", "iv"}
@@ -674,54 +676,84 @@ def generate_synthetic_option_chain(symbol: str, spot: float) -> pd.DataFrame:
 
 def fetch_or_simulate_option_chain(symbol: str, spot: float) -> pd.DataFrame:
     """
-    Fetch option chain from yfinance or fall back to high-fidelity synthetic model.
+    Fetch option chain from NSE India or fall back to high-fidelity synthetic model.
     """
     clean_sym = symbol.strip().upper().replace(".NS", "").replace("^", "")
-    ticker_str = f"{clean_sym}.NS"
-
+    indices = {"NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY"}
+    
     try:
-        t = yf.Ticker(ticker_str)
-        expiries = t.options
-        if expiries and len(expiries) > 0:
-            exp = expiries[0]
-            chain_obj = t.option_chain(exp)
-            calls = chain_obj.calls.copy()
-            puts = chain_obj.puts.copy()
-
-            if not calls.empty or not puts.empty:
+        session = requests.Session()
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+        session.headers.update(headers)
+        
+        # Step 1: Hit homepage to get cookies
+        session.get("https://www.nseindia.com", timeout=10)
+        
+        # Step 2: Fetch API
+        if clean_sym in indices:
+            url = f"https://www.nseindia.com/api/option-chain-indices?symbol={clean_sym}"
+        else:
+            safe_sym = quote(clean_sym)
+            url = f"https://www.nseindia.com/api/option-chain-equities?symbol={safe_sym}"
+            
+        headers.update({"Accept": "application/json, text/javascript, */*; q=0.01"})
+        session.headers.update(headers)
+        
+        resp = session.get(url, timeout=10)
+        if resp.status_code == 200:
+            data = resp.json()
+            records = data.get("records", {})
+            expiry_dates = records.get("expiryDates", [])
+            
+            if expiry_dates and records.get("data"):
+                nearest_exp = expiry_dates[0]
                 rows = []
-                for _, r in calls.iterrows():
-                    rows.append({
-                        "expiry": exp,
-                        "strike": float(r["strike"]),
-                        "option_type": "CE",
-                        "ltp": float(r.get("lastPrice", 0.0)),
-                        "bid": float(r.get("bid", r.get("lastPrice", 0.0) * 0.98)),
-                        "ask": float(r.get("ask", r.get("lastPrice", 0.0) * 1.02)),
-                        "volume": int(r.get("volume", 0) if pd.notna(r.get("volume")) else 0),
-                        "oi": int(r.get("openInterest", 0) if pd.notna(r.get("openInterest")) else 0),
-                        "change_oi": int(r.get("change", 0) if pd.notna(r.get("change")) else 0),
-                        "iv": float(r.get("impliedVolatility", 0.20) * 100 if pd.notna(r.get("impliedVolatility")) else 20.0)
-                    })
-                for _, r in puts.iterrows():
-                    rows.append({
-                        "expiry": exp,
-                        "strike": float(r["strike"]),
-                        "option_type": "PE",
-                        "ltp": float(r.get("lastPrice", 0.0)),
-                        "bid": float(r.get("bid", r.get("lastPrice", 0.0) * 0.98)),
-                        "ask": float(r.get("ask", r.get("lastPrice", 0.0) * 1.02)),
-                        "volume": int(r.get("volume", 0) if pd.notna(r.get("volume")) else 0),
-                        "oi": int(r.get("openInterest", 0) if pd.notna(r.get("openInterest")) else 0),
-                        "change_oi": int(r.get("change", 0) if pd.notna(r.get("change")) else 0),
-                        "iv": float(r.get("impliedVolatility", 0.20) * 100 if pd.notna(r.get("impliedVolatility")) else 20.0)
-                    })
+                for item in records["data"]:
+                    if item.get("expiryDate") != nearest_exp:
+                        continue
+                        
+                    strike = float(item["strikePrice"])
+                    
+                    if "CE" in item:
+                        ce = item["CE"]
+                        rows.append({
+                            "expiry": nearest_exp,
+                            "strike": strike,
+                            "option_type": "CE",
+                            "ltp": float(ce.get("lastPrice", 0.0)),
+                            "bid": float(ce.get("bidprice", 0.0)),
+                            "ask": float(ce.get("askPrice", 0.0)),
+                            "volume": int(ce.get("totalTradedVolume", 0)),
+                            "oi": int(ce.get("openInterest", 0)),
+                            "change_oi": int(ce.get("changeinOpenInterest", 0)),
+                            "iv": float(ce.get("impliedVolatility", 0.0))
+                        })
+                    
+                    if "PE" in item:
+                        pe = item["PE"]
+                        rows.append({
+                            "expiry": nearest_exp,
+                            "strike": strike,
+                            "option_type": "PE",
+                            "ltp": float(pe.get("lastPrice", 0.0)),
+                            "bid": float(pe.get("bidprice", 0.0)),
+                            "ask": float(pe.get("askPrice", 0.0)),
+                            "volume": int(pe.get("totalTradedVolume", 0)),
+                            "oi": int(pe.get("openInterest", 0)),
+                            "change_oi": int(pe.get("changeinOpenInterest", 0)),
+                            "iv": float(pe.get("impliedVolatility", 0.0))
+                        })
+                        
                 df = pd.DataFrame(rows)
                 ok, _ = validate_chain(df)
                 if ok:
                     return df
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"NSE API fetch failed for {clean_sym}: {e}")
 
     # Fallback to realistic synthetic model
     return generate_synthetic_option_chain(symbol, spot)

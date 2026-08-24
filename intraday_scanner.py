@@ -14,7 +14,7 @@ from datetime import datetime
 
 PRESET_UNIVERSES = {
     "Nifty 50 Liquid Top": [
-        "RELIANCE", "HDFCBANK", "ICICIBANK", "INFY", "TCS", "ITC", "BHARTIARTL",
+        "NIFTY", "RELIANCE", "HDFCBANK", "ICICIBANK", "INFY", "TCS", "ITC", "BHARTIARTL",
         "LT", "SBIN", "AXISBANK", "KOTAKBANK", "HINDUNILVR", "M&M", "TATAMOTORS",
         "BAJFINANCE", "MARUTI", "SUNPHARMA", "NTPC", "POWERGRID", "TITAN"
     ],
@@ -344,3 +344,4 @@ def scan_intraday_universe(
     df = df.sort_values(["_order", "Score"], ascending=[True, False]).drop(columns=["_order"])
     df.insert(0, "Rank", range(1, len(df) + 1))
     return df
+

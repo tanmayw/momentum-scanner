@@ -1320,7 +1320,7 @@ elif st.session_state.app_view == "Intraday MTF":
             else:
                 custom_input = st.text_area(
                     "NSE Symbols (comma-separated)",
-                    "RELIANCE, SBIN, ICICIBANK, HDFCBANK, BHARTIARTL, TCS, INFY, LT, TRENT, HAL, BEL, MCX"
+                    "NIFTY, RELIANCE, SBIN, ICICIBANK, HDFCBANK, BHARTIARTL, TCS, INFY, LT, TRENT, HAL, BEL, MCX"
                 )
                 universe_symbols = [s.strip().upper() for s in custom_input.split(",") if s.strip()]
 
@@ -1663,7 +1663,7 @@ else:
         else:
             custom_opt_input = st.text_area(
                 "F&O Symbols (comma-separated)",
-                "RELIANCE, HDFCBANK, ICICIBANK, INFY, TCS, BHARTIARTL, LT, SBIN, TRENT, HAL, BEL, MCX",
+                "NIFTY, RELIANCE, HDFCBANK, ICICIBANK, INFY, TCS, BHARTIARTL, LT, SBIN, TRENT, HAL, BEL, MCX",
                 key="custom_opt_universe"
             )
             screen_universe = [s.strip().upper() for s in custom_opt_input.split(",") if s.strip()]
@@ -1992,3 +1992,4 @@ else:
                 }),
                 use_container_width=True
             )
+
