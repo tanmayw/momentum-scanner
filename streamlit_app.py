@@ -394,7 +394,7 @@ def score_candidates(df):
 #  DataFrame Styling Helpers
 # ─────────────────────────────────────────────
 
-def style_dataframe(df, theme="dark"):
+def style_dataframe(df, theme="light"):
     is_light = (theme == "light")
     c_buy_bg    = "rgba(22, 163, 74, 0.12)" if is_light else "rgba(0, 255, 136, 0.12)"
     c_buy_txt   = "#15803d" if is_light else "#00ff88"
@@ -478,7 +478,7 @@ def style_dataframe(df, theme="dark"):
     return styled
 
 
-def style_intraday_dataframe(df, theme="dark"):
+def style_intraday_dataframe(df, theme="light"):
     is_light = (theme == "light")
     c_strong_bg = "rgba(22, 163, 74, 0.14)" if is_light else "rgba(0, 255, 136, 0.14)"
     c_strong_txt = "#15803d" if is_light else "#00ff88"
@@ -543,7 +543,7 @@ def style_intraday_dataframe(df, theme="dark"):
     return styled
 
 
-def style_options_screener_dataframe(df, theme="dark"):
+def style_options_screener_dataframe(df, theme="light"):
     is_light = (theme == "light")
     c_bull_bg   = "rgba(22, 163, 74, 0.14)" if is_light else "rgba(0, 255, 136, 0.14)"
     c_bull_txt  = "#15803d" if is_light else "#00ff88"
@@ -629,7 +629,7 @@ st.set_page_config(
 # ─────────────────────────────────────────────
 
 if "theme" not in st.session_state:
-    st.session_state.theme = "dark"
+    st.session_state.theme = "light"
 
 if "app_view" not in st.session_state:
     st.session_state.app_view = "Swing Momentum"
