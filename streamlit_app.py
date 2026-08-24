@@ -1562,6 +1562,34 @@ elif st.session_state.app_view == "Intraday MTF":
                     </div>
                     """, unsafe_allow_html=True)
 
+                    # Manual Track Section for Active Scan
+                    st.markdown("---")
+                    st.markdown("#### 📌 Track Intraday Recommendation")
+                    track_col1, track_col2 = st.columns([3, 1])
+                    with track_col1:
+                        qualified_symbols = view_intra["Symbol"].apply(lambda link: link.split("NSE:")[-1]).tolist()
+                        symbol_to_track = st.selectbox("Select Symbol to track for Intraday Performance", qualified_symbols, key="intra_active_track_sym_select")
+                    with track_col2:
+                        st.markdown("<br>", unsafe_allow_html=True)
+                        track_btn = st.button("📌 Track Signal", key="intra_active_track_btn", use_container_width=True)
+                        
+                    if track_btn and symbol_to_track:
+                        sig_row = results_df[results_df["Symbol"] == symbol_to_track].iloc[0]
+                        success, msg = add_tracked_signal(
+                            symbol=symbol_to_track,
+                            sig_type="Intraday",
+                            entry_price=sig_row["Price"],
+                            stop_loss=sig_row["Stop_Loss"],
+                            target_1=sig_row["Target_1"],
+                            target_2=sig_row["Target_2"],
+                            score=sig_row["Score"],
+                            action=sig_row["Signal"]
+                        )
+                        if success:
+                            st.success(msg)
+                        else:
+                            st.warning(msg)
+
         elif "intraday_results" in st.session_state and not st.session_state.intraday_results.empty:
             res_saved = st.session_state.intraday_results
             st.info("Displaying previously scanned Intraday results. Hit 'Run Intraday MTF Scan' to refresh.")
@@ -1588,6 +1616,34 @@ elif st.session_state.app_view == "Intraday MTF":
                 use_container_width=True,
                 hide_index=True
             )
+
+            # Manual Track Section for Saved Results
+            st.markdown("---")
+            st.markdown("#### 📌 Track Intraday Recommendation")
+            track_col1, track_col2 = st.columns([3, 1])
+            with track_col1:
+                qualified_symbols = view_saved["Symbol"].apply(lambda link: link.split("NSE:")[-1]).tolist()
+                symbol_to_track = st.selectbox("Select Symbol to track for Intraday Performance", qualified_symbols, key="intra_saved_track_sym_select")
+            with track_col2:
+                st.markdown("<br>", unsafe_allow_html=True)
+                track_btn = st.button("📌 Track Signal", key="intra_saved_track_btn", use_container_width=True)
+                
+            if track_btn and symbol_to_track:
+                sig_row = res_saved[res_saved["Symbol"] == symbol_to_track].iloc[0]
+                success, msg = add_tracked_signal(
+                    symbol=symbol_to_track,
+                    sig_type="Intraday",
+                    entry_price=sig_row["Price"],
+                    stop_loss=sig_row["Stop_Loss"],
+                    target_1=sig_row["Target_1"],
+                    target_2=sig_row["Target_2"],
+                    score=sig_row["Score"],
+                    action=sig_row["Signal"]
+                )
+                if success:
+                    st.success(msg)
+                else:
+                    st.warning(msg)
         else:
             st.markdown(f"""
             <div class="idle">
