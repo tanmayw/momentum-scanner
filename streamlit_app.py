@@ -1382,115 +1382,115 @@ if st.session_state.app_view == "Swing Momentum":
                     </div>
                     """, unsafe_allow_html=True)
 
-        elif "swing_results" in st.session_state and not st.session_state.swing_results.empty:
-            scored = st.session_state.swing_results
-            st.info("Displaying previously scanned Swing Momentum results. Hit 'Run Full Swing Scan' to refresh.")
+    elif "swing_results" in st.session_state and not st.session_state.swing_results.empty:
+        scored = st.session_state.swing_results
+        st.info("Displaying previously scanned Swing Momentum results. Hit 'Run Full Swing Scan' to refresh.")
+        
+        display_cols = [
+            "Rank", "Symbol", "Action", "Price",
+            "Final Score", "Momentum Score", "Entry Score",
+            "Monthly RSI", "Weekly RSI", "Daily RSI",
+            "ADX", "Vol Ratio", "RR Ratio", "Risk %",
+            "3M Return", "6M Return", "RS vs Nifty", "52W Distance",
+            "Stop Loss", "Target 2%", "Target 5%",
+        ]
+        view = scored[display_cols].head(top_n).copy()
+        for c in ["3M Return", "6M Return", "RS vs Nifty", "52W Distance"]:
+            view[c] = (view[c] * 100).round(2)
             
-            display_cols = [
-                "Rank", "Symbol", "Action", "Price",
-                "Final Score", "Momentum Score", "Entry Score",
-                "Monthly RSI", "Weekly RSI", "Daily RSI",
-                "ADX", "Vol Ratio", "RR Ratio", "Risk %",
-                "3M Return", "6M Return", "RS vs Nifty", "52W Distance",
-                "Stop Loss", "Target 2%", "Target 5%",
-            ]
-            view = scored[display_cols].head(top_n).copy()
-            for c in ["3M Return", "6M Return", "RS vs Nifty", "52W Distance"]:
-                view[c] = (view[c] * 100).round(2)
-                
-            # Load tracked swing symbols
-            tracked_signals = load_tracked_signals()
-            tracked_swing_syms = {s["symbol"].upper() for s in tracked_signals if s["type"] == "Swing"}
-            
-            view_edit = view.copy()
-            view_edit.insert(3, "Track", view_edit["Symbol"].apply(lambda s: s.upper() in tracked_swing_syms))
-            
-            view_edit["Symbol"] = view_edit["Symbol"].apply(
-                lambda s: f"https://in.tradingview.com/chart/?symbol=NSE:{s}"
-            )
-            
-            # Prefix emojis
-            view_edit["Action"] = view_edit["Action"].map({
-                "BUY": "🟢 BUY",
-                "WATCH / PULLBACK": "🟡 WATCH",
-                "WATCHLIST": "🔵 WATCHLIST",
-                "AVOID": "🔴 AVOID"
-            }).fillna(view_edit["Action"])
-            
-            # Display editor
-            edited_swing = st.data_editor(
-                view_edit,
-                column_config={
-                    "Track": st.column_config.CheckboxColumn("Track", default=False),
-                    "Symbol": st.column_config.LinkColumn(
-                        "Symbol",
-                        help="Click to open chart on TradingView",
-                        display_text=r"https://in\.tradingview\.com/chart/\?symbol=NSE:(.*)"
-                    ),
-                    "Price": st.column_config.NumberColumn("Price", format="₹%.2f"),
-                    "Stop Loss": st.column_config.NumberColumn("Stop Loss", format="₹%.2f"),
-                    "Target 2%": st.column_config.NumberColumn("Target 2%", format="₹%.2f"),
-                    "Target 5%": st.column_config.NumberColumn("Target 5%", format="₹%.2f"),
-                    "3M Return": st.column_config.NumberColumn("3M Return", format="%+.2f%%"),
-                    "6M Return": st.column_config.NumberColumn("6M Return", format="%+.2f%%"),
-                    "RS vs Nifty": st.column_config.NumberColumn("RS vs Nifty", format="%+.2f%%"),
-                    "52W Distance": st.column_config.NumberColumn("52W Distance", format="%.2f%%"),
-                    "Vol Ratio": st.column_config.NumberColumn("Vol Ratio", format="%.2fx"),
-                    "RR Ratio": st.column_config.NumberColumn("RR Ratio", format="%.2f:1"),
-                    "Risk %": st.column_config.NumberColumn("Risk %", format="%.2f%%"),
-                },
-                disabled=[c for c in view_edit.columns if c != "Track"],
-                use_container_width=True,
-                hide_index=True,
-                key="swing_saved_editor"
-            )
-            
-            # Handle edits
-            if "swing_saved_editor" in st.session_state and st.session_state.swing_saved_editor.get("edited_rows"):
-                edits = st.session_state.swing_saved_editor["edited_rows"]
-                for row_idx_str, edit in edits.items():
-                    row_idx = int(row_idx_str)
-                    if "Track" in edit:
-                        is_tracked = edit["Track"]
-                        url = view_edit.iloc[row_idx]["Symbol"]
-                        import urllib.parse
-                        parsed = urllib.parse.urlparse(url)
-                        params = urllib.parse.parse_qs(parsed.query)
-                        symbol = params.get("symbol", [url])[0].split("NSE:")[-1]
-                        
-                        if is_tracked:
-                            sig_row = scored[scored["Symbol"] == symbol].iloc[0]
-                            add_tracked_signal(
-                                symbol=symbol,
-                                sig_type="Swing",
-                                entry_price=sig_row["Price"],
-                                stop_loss=sig_row["Stop Loss"],
-                                target_2=sig_row["Target 2%"],
-                                target_5=sig_row["Target 5%"],
-                                score=sig_row["Final Score"],
-                                action=sig_row["Action"]
-                            )
-                            st.success(f"Started tracking {symbol} for Swing performance!")
-                        else:
-                            tracked = load_tracked_signals()
-                            tracked = [s for s in tracked if not (s["symbol"].upper() == symbol.upper() and s["type"] == "Swing")]
-                            save_tracked_signals(tracked)
-                            st.warning(f"Stopped tracking {symbol}.")
-                        st.rerun()
+        # Load tracked swing symbols
+        tracked_signals = load_tracked_signals()
+        tracked_swing_syms = {s["symbol"].upper() for s in tracked_signals if s["type"] == "Swing"}
+        
+        view_edit = view.copy()
+        view_edit.insert(3, "Track", view_edit["Symbol"].apply(lambda s: s.upper() in tracked_swing_syms))
+        
+        view_edit["Symbol"] = view_edit["Symbol"].apply(
+            lambda s: f"https://in.tradingview.com/chart/?symbol=NSE:{s}"
+        )
+        
+        # Prefix emojis
+        view_edit["Action"] = view_edit["Action"].map({
+            "BUY": "🟢 BUY",
+            "WATCH / PULLBACK": "🟡 WATCH",
+            "WATCHLIST": "🔵 WATCHLIST",
+            "AVOID": "🔴 AVOID"
+        }).fillna(view_edit["Action"])
+        
+        # Display editor
+        edited_swing = st.data_editor(
+            view_edit,
+            column_config={
+                "Track": st.column_config.CheckboxColumn("Track", default=False),
+                "Symbol": st.column_config.LinkColumn(
+                    "Symbol",
+                    help="Click to open chart on TradingView",
+                    display_text=r"https://in\.tradingview\.com/chart/\?symbol=NSE:(.*)"
+                ),
+                "Price": st.column_config.NumberColumn("Price", format="₹%.2f"),
+                "Stop Loss": st.column_config.NumberColumn("Stop Loss", format="₹%.2f"),
+                "Target 2%": st.column_config.NumberColumn("Target 2%", format="₹%.2f"),
+                "Target 5%": st.column_config.NumberColumn("Target 5%", format="₹%.2f"),
+                "3M Return": st.column_config.NumberColumn("3M Return", format="%+.2f%%"),
+                "6M Return": st.column_config.NumberColumn("6M Return", format="%+.2f%%"),
+                "RS vs Nifty": st.column_config.NumberColumn("RS vs Nifty", format="%+.2f%%"),
+                "52W Distance": st.column_config.NumberColumn("52W Distance", format="%.2f%%"),
+                "Vol Ratio": st.column_config.NumberColumn("Vol Ratio", format="%.2fx"),
+                "RR Ratio": st.column_config.NumberColumn("RR Ratio", format="%.2f:1"),
+                "Risk %": st.column_config.NumberColumn("Risk %", format="%.2f%%"),
+            },
+            disabled=[c for c in view_edit.columns if c != "Track"],
+            use_container_width=True,
+            hide_index=True,
+            key="swing_saved_editor"
+        )
+        
+        # Handle edits
+        if "swing_saved_editor" in st.session_state and st.session_state.swing_saved_editor.get("edited_rows"):
+            edits = st.session_state.swing_saved_editor["edited_rows"]
+            for row_idx_str, edit in edits.items():
+                row_idx = int(row_idx_str)
+                if "Track" in edit:
+                    is_tracked = edit["Track"]
+                    url = view_edit.iloc[row_idx]["Symbol"]
+                    import urllib.parse
+                    parsed = urllib.parse.urlparse(url)
+                    params = urllib.parse.parse_qs(parsed.query)
+                    symbol = params.get("symbol", [url])[0].split("NSE:")[-1]
+                    
+                    if is_tracked:
+                        sig_row = scored[scored["Symbol"] == symbol].iloc[0]
+                        add_tracked_signal(
+                            symbol=symbol,
+                            sig_type="Swing",
+                            entry_price=sig_row["Price"],
+                            stop_loss=sig_row["Stop Loss"],
+                            target_2=sig_row["Target 2%"],
+                            target_5=sig_row["Target 5%"],
+                            score=sig_row["Final Score"],
+                            action=sig_row["Action"]
+                        )
+                        st.success(f"Started tracking {symbol} for Swing performance!")
+                    else:
+                        tracked = load_tracked_signals()
+                        tracked = [s for s in tracked if not (s["symbol"].upper() == symbol.upper() and s["type"] == "Swing")]
+                        save_tracked_signals(tracked)
+                        st.warning(f"Stopped tracking {symbol}.")
+                    st.rerun()
 
-            st.markdown(f"""
-            <div class="legend">
-                <div class="leg-item"><span class="leg-dot" style="background:{T['green']}"></span>
-                    <span class="leg-txt">BUY &mdash; Score &ge; 85</span></div>
-                <div class="leg-item"><span class="leg-dot" style="background:{T['amber']}"></span>
-                    <span class="leg-txt">WATCH / PULLBACK &mdash; Score &ge; 75</span></div>
-                <div class="leg-item"><span class="leg-dot" style="background:{T['blue']}"></span>
-                    <span class="leg-txt">WATCHLIST &mdash; Score &ge; 65</span></div>
-                <div class="leg-item"><span class="leg-dot" style="background:{T['red']}"></span>
-                    <span class="leg-txt">AVOID &mdash; Score &lt; 65</span></div>
-                <div class="leg-tip">Check 'Track' in the grid to add to performance monitor watchlist. &rarr;</div>
-            </div>
-            """, unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class="legend">
+            <div class="leg-item"><span class="leg-dot" style="background:{T['green']}"></span>
+                <span class="leg-txt">BUY &mdash; Score &ge; 85</span></div>
+            <div class="leg-item"><span class="leg-dot" style="background:{T['amber']}"></span>
+                <span class="leg-txt">WATCH / PULLBACK &mdash; Score &ge; 75</span></div>
+            <div class="leg-item"><span class="leg-dot" style="background:{T['blue']}"></span>
+                <span class="leg-txt">WATCHLIST &mdash; Score &ge; 65</span></div>
+            <div class="leg-item"><span class="leg-dot" style="background:{T['red']}"></span>
+                <span class="leg-txt">AVOID &mdash; Score &lt; 65</span></div>
+            <div class="leg-tip">Check 'Track' in the grid to add to performance monitor watchlist. &rarr;</div>
+        </div>
+        """, unsafe_allow_html=True)
 
     else:
         st.markdown(f"""
