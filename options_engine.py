@@ -607,13 +607,67 @@ def _black_scholes_approx(spot, strike, t_days, r=0.07, iv=0.20, option_type="CE
     return max(round(price, 2), 0.05)
 
 
+def calculate_next_expiry(symbol: str) -> str:
+    """
+    Calculate the next valid option expiry date for NSE indices (weekly) and stocks (monthly).
+    MIDCPNIFTY = Monday (0), FINNIFTY = Tuesday (1), BANKNIFTY = Wednesday (2), NIFTY/SENSEX = Thursday (3).
+    Stocks expire on the last Thursday of the month.
+    """
+    clean_sym = symbol.strip().upper().replace(".NS", "").replace("^", "")
+    now = datetime.now()
+    
+    expiry_weekday_map = {"MIDCPNIFTY": 0, "FINNIFTY": 1, "BANKNIFTY": 2, "NIFTY": 3, "SENSEX": 3}
+    
+    if clean_sym in expiry_weekday_map:
+        # Index option (weekly expiry)
+        target_w = expiry_weekday_map[clean_sym]
+        days_to_target = (target_w - now.weekday()) % 7
+        if days_to_target == 0:
+            # If today is expiry day and past 15:30 (market close), use next week's expiry
+            if now.hour > 15 or (now.hour == 15 and now.minute >= 30):
+                days_to_target = 7
+        candidate = now + timedelta(days=days_to_target)
+        return candidate.strftime("%Y-%m-%d")
+    else:
+        # Stock option (monthly expiry - last Thursday of the month)
+        def last_thursday_of_month(year, month):
+            if month == 12:
+                last_day = datetime(year + 1, 1, 1) - timedelta(days=1)
+            else:
+                last_day = datetime(year, month + 1, 1) - timedelta(days=1)
+            offset = (last_day.weekday() - 3) % 7
+            return last_day - timedelta(days=offset)
+            
+        curr_month_thurs = last_thursday_of_month(now.year, now.month)
+        
+        has_passed = False
+        if now.date() > curr_month_thurs.date():
+            has_passed = True
+        elif now.date() == curr_month_thurs.date():
+            if now.hour > 15 or (now.hour == 15 and now.minute >= 30):
+                has_passed = True
+                
+        if has_passed:
+            if now.month == 12:
+                candidate = last_thursday_of_month(now.year + 1, 1)
+            else:
+                candidate = last_thursday_of_month(now.year, now.month + 1)
+        else:
+            candidate = curr_month_thurs
+            
+        return candidate.strftime("%Y-%m-%d")
+
+
 def generate_synthetic_option_chain(symbol: str, spot: float) -> pd.DataFrame:
     """
     Generate realistic, normalized option chain for NSE ticker.
     Ensures testing is always functional even outside exchange trading hours.
     """
-    clean_sym = symbol.strip().upper()
-    next_expiry = (datetime.now() + timedelta(days=(3 - datetime.now().weekday()) % 7 + 7)).strftime("%Y-%m-%d")
+    next_expiry = calculate_next_expiry(symbol)
+    
+    # Calculate actual days to expiry for pricing
+    expiry_dt = datetime.strptime(next_expiry, "%Y-%m-%d")
+    t_days = max((expiry_dt.date() - datetime.now().date()).days, 1)
 
     # Determine step size based on price
     step = 50 if spot > 2000 else (20 if spot > 800 else (10 if spot > 250 else 5))
@@ -630,7 +684,7 @@ def generate_synthetic_option_chain(symbol: str, spot: float) -> pd.DataFrame:
         iv_dec = base_iv / 100.0
 
         # CE Contract
-        ce_price = _black_scholes_approx(spot, k, 7, iv=iv_dec, option_type="CE")
+        ce_price = _black_scholes_approx(spot, k, t_days, iv=iv_dec, option_type="CE")
         ce_bid = round(ce_price * 0.985, 2)
         ce_ask = round(ce_price * 1.015, 2)
         ce_oi = int(max(100000 - abs(k - spot) * 80 + np.random.randint(-5000, 15000), 5000))
@@ -651,7 +705,7 @@ def generate_synthetic_option_chain(symbol: str, spot: float) -> pd.DataFrame:
         })
 
         # PE Contract
-        pe_price = _black_scholes_approx(spot, k, 7, iv=iv_dec, option_type="PE")
+        pe_price = _black_scholes_approx(spot, k, t_days, iv=iv_dec, option_type="PE")
         pe_bid = round(pe_price * 0.985, 2)
         pe_ask = round(pe_price * 1.015, 2)
         pe_oi = int(max(100000 - abs(k - spot) * 80 + np.random.randint(-5000, 15000), 5000))
