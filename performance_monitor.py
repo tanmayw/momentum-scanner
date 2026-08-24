@@ -264,7 +264,7 @@ def backfill_swing_signals(data_map, benchmark, days=7, force=False):
         if rows:
             df = pd.DataFrame(rows)
             scored = score_candidates_for_date(df)
-            qualified = scored[scored["Action"].isin(["BUY", "WATCH / PULLBACK"])]
+            qualified = scored[scored["Action"].isin(["BUY", "WATCH / PULLBACK", "WATCHLIST"])]
             
             for _, row in qualified.iterrows():
                 new_signals.append({
@@ -754,6 +754,7 @@ def evaluate_tracked_signals_performance():
             rows.append({
                 "Symbol": sym,
                 "Type": sig_type,
+                "Action": sig.get("action", "BUY"),
                 "Signal Date/Time": sig_time_str if sig_type == "Intraday" else sig_date_str,
                 "Entry Price": entry,
                 "Stop Loss": sl,
