@@ -1007,15 +1007,15 @@ top_col_view, top_col_btn = st.columns([7.5, 2.5])
 
 MODE_OPTIONS = [
     "🚀 Swing Momentum (D · W · M)",
-    "⚡ Intraday MTF (Daily · 1h · 15m)",
-    "🎯 Options Strategy (MTF + Chain Gate)"
+    "⚡ Intraday MTF (Daily · 1h · 15m)"
 ]
 
 current_mode_idx = 0
 if st.session_state.app_view == "Intraday MTF":
     current_mode_idx = 1
 elif st.session_state.app_view == "Options Strategy":
-    current_mode_idx = 2
+    st.session_state.app_view = "Swing Momentum"
+    current_mode_idx = 0
 
 with top_col_view:
     app_view = st.radio(
@@ -1027,10 +1027,8 @@ with top_col_view:
     )
     if "Swing" in app_view:
         st.session_state.app_view = "Swing Momentum"
-    elif "Intraday" in app_view:
-        st.session_state.app_view = "Intraday MTF"
     else:
-        st.session_state.app_view = "Options Strategy"
+        st.session_state.app_view = "Intraday MTF"
 
 with top_col_btn:
     if st.button(f"{T['toggle_icon']} {T['toggle_label']}", key="theme_toggle", type="secondary", use_container_width=True):
@@ -1600,7 +1598,7 @@ elif st.session_state.app_view == "Intraday MTF":
 # =============================================================================
 #  VIEW 3: OPTIONS CHAIN STRATEGY LAYER
 # =============================================================================
-else:
+elif st.session_state.app_view == "Options Strategy":
 
     st.markdown(f"""
     <div class="hero">
