@@ -10,6 +10,8 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 
+from intraday_scanner import download_ticker_data
+
 # Cache file paths
 SWING_HISTORY_PATH = Path("cache/swing_signals_history.json")
 Path("cache").mkdir(exist_ok=True)
