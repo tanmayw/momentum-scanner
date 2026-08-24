@@ -35,6 +35,13 @@ from options_engine import (
     LOT_SIZES
 )
 
+from performance_monitor import (
+    backfill_swing_signals,
+    evaluate_swing_performance,
+    backfill_and_evaluate_intraday,
+    evaluate_options_performance
+)
+
 NSE_CSV_URLS = [
     "https://www.niftyindices.com/IndexConstituent/ind_nifty500list.csv",
     "https://www.nseindia.com/content/indices/ind_nifty500list.csv",
@@ -613,6 +620,58 @@ def style_options_screener_dataframe(df, theme="light"):
     return styled
 
 
+def style_generic_performance_dataframe(df, theme="light"):
+    is_light = (theme == "light")
+    c_green_bg  = "rgba(22, 163, 74, 0.12)" if is_light else "rgba(0, 255, 136, 0.12)"
+    c_green_txt = "#15803d" if is_light else "#00ff88"
+    c_red_bg    = "rgba(220, 38, 38, 0.10)" if is_light else "rgba(255, 82, 82, 0.12)"
+    c_red_txt   = "#b91c1c" if is_light else "#ff5252"
+    c_blue_bg   = "rgba(37, 99, 235, 0.10)" if is_light else "rgba(100, 181, 246, 0.12)"
+    c_blue_txt  = "#1d4ed8" if is_light else "#64b5f6"
+
+    def color_outcome(val):
+        s_val = str(val)
+        if "Target" in s_val or "Profit" in s_val or "Win" in s_val:
+            return f"background-color:{c_green_bg};color:{c_green_txt};font-weight:700;"
+        elif "Stop" in s_val or "Loss" in s_val or "Fail" in s_val:
+            return f"background-color:{c_red_bg};color:{c_red_txt};font-weight:700;"
+        else:
+            return f"background-color:{c_blue_bg};color:{c_blue_txt};font-weight:600;"
+
+    def color_return(val):
+        if pd.isna(val): return ""
+        try:
+            val_float = float(val)
+            color = c_green_txt if val_float >= 0 else c_red_txt
+            return f"color:{color};font-weight:600;"
+        except Exception:
+            return ""
+
+    map_cols_outcome = [c for c in ["Outcome", "Status"] if c in df.columns]
+    map_cols_return = [c for c in ["Current Return %", "Max Return %", "Return %", "Max Gain %", "Estimated P&L"] if c in df.columns]
+    
+    st_df = df.style
+    if map_cols_outcome:
+        st_df = st_df.map(color_outcome, subset=map_cols_outcome)
+    if map_cols_return:
+        st_df = st_df.map(color_return, subset=map_cols_return)
+        
+    fmt_dict = {}
+    price_cols = ["Entry Price", "Stop Loss", "Target 1%", "Target 2%", "Target 5%", "Current Price", "Entry Spot", "Current Spot", "Net Premium", "Max Loss", "Max Profit", "Estimated P&L"]
+    pct_cols = ["Current Return %", "Max Return %", "Return %", "Max Gain %"]
+    
+    for c in df.columns:
+        if c in price_cols:
+            fmt_dict[c] = "₹{:.2f}"
+        elif c in pct_cols:
+            fmt_dict[c] = "{:+.2f}%"
+        elif c == "Score":
+            fmt_dict[c] = "{:.1f}"
+            
+    st_df = st_df.format(fmt_dict)
+    return st_df
+
+
 # ─────────────────────────────────────────────
 #  Page Config
 # ─────────────────────────────────────────────
@@ -1007,15 +1066,18 @@ top_col_view, top_col_btn = st.columns([7.5, 2.5])
 
 MODE_OPTIONS = [
     "🚀 Swing Momentum (D · W · M)",
-    "⚡ Intraday MTF (Daily · 1h · 15m)"
+    "⚡ Intraday MTF (Daily · 1h · 15m)",
+    "🎯 Options Strategy (MTF + Chain Gate)",
+    "📊 Performance Monitor"
 ]
 
 current_mode_idx = 0
 if st.session_state.app_view == "Intraday MTF":
     current_mode_idx = 1
 elif st.session_state.app_view == "Options Strategy":
-    st.session_state.app_view = "Swing Momentum"
-    current_mode_idx = 0
+    current_mode_idx = 2
+elif st.session_state.app_view == "Performance Monitor":
+    current_mode_idx = 3
 
 with top_col_view:
     app_view = st.radio(
@@ -1027,8 +1089,12 @@ with top_col_view:
     )
     if "Swing" in app_view:
         st.session_state.app_view = "Swing Momentum"
-    else:
+    elif "Intraday" in app_view:
         st.session_state.app_view = "Intraday MTF"
+    elif "Options" in app_view:
+        st.session_state.app_view = "Options Strategy"
+    else:
+        st.session_state.app_view = "Performance Monitor"
 
 with top_col_btn:
     if st.button(f"{T['toggle_icon']} {T['toggle_label']}", key="theme_toggle", type="secondary", use_container_width=True):
@@ -2018,4 +2084,202 @@ elif st.session_state.app_view == "Options Strategy":
                 }),
                 use_container_width=True
             )
+
+
+# =============================================================================
+#  VIEW 4: PERFORMANCE MONITOR
+# =============================================================================
+elif st.session_state.app_view == "Performance Monitor":
+
+    st.markdown(f"""
+    <div class="hero">
+        <div class="hero-badge"><span class="pulse"></span>System Analytics</div>
+        <div class="hero-title">Signal Performance Tracker</div>
+        <div class="hero-sub">Track recommendation performance, win rates, hit counts, and outcomes.</div>
+        <div class="hero-meta">
+            <div><div class="hm-label">Tracked Timeframe</div><div class="hm-val">Last 7 Trading Days</div></div>
+            <div><div class="hm-label">Screener Cache</div><div class="hm-val">Local Parquet &amp; JSON</div></div>
+            <div><div class="hm-label">Metrics Engine</div><div class="hm-val">Auto-Evaluator</div></div>
+            <div><div class="hm-label">As of</div><div class="hm-val">{now_str}</div></div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    perf_tab_swing, perf_tab_intra_opt = st.tabs([
+        "🚀 Swing Signals Performance",
+        "⚡ Intraday & Options Performance"
+    ])
+
+    # ── TAB 1: Swing Signals Performance ──
+    with perf_tab_swing:
+        st.markdown("#### 🚀 Swing Signals Performance Report")
+        st.caption("Evaluates signals generated over the last 7 trading days and tracks their outcomes.")
+
+        run_backfill_btn = st.button("🚀 Run Swing Signal Backfill & Performance Check", type="primary", use_container_width=True)
+
+        if run_backfill_btn:
+            status_placeholder = st.empty()
+            with status_placeholder.container():
+                st.info("Loading Nifty 500 price data and running performance evaluator...")
+
+            try:
+                symbols, _ = get_nifty500_symbols()
+                benchmark = get_benchmark()
+                data_map = download_prices(symbols)
+                
+                # Fetch cached/new signals for last 7 trading days
+                signals = backfill_swing_signals(data_map, benchmark, days=7)
+                
+                if not signals:
+                    status_placeholder.warning("No Swing buy/watch recommendations generated in the last 7 trading days.")
+                else:
+                    df_perf = evaluate_swing_performance(signals, data_map)
+                    status_placeholder.empty()
+
+                    # Metrics calculations
+                    total = len(df_perf)
+                    t5_hits = len(df_perf[df_perf["Outcome"] == "Hit Target 5%"])
+                    t2_hits = len(df_perf[df_perf["Outcome"] == "Hit Target 2%"])
+                    stopped = len(df_perf[df_perf["Outcome"] == "Stopped Out"])
+                    active = len(df_perf[df_perf["Outcome"] == "Active"])
+                    
+                    completed_trades = t5_hits + t2_hits + stopped
+                    win_rate = ((t5_hits + t2_hits) / completed_trades * 100.0) if completed_trades > 0 else 0.0
+                    avg_ret = df_perf["Current Return %"].mean()
+                    max_ret = df_perf["Max Return %"].max()
+
+                    # KPI Cards
+                    m1, m2, m3, m4, m5 = st.columns(5)
+                    m1.metric("Total Hits", f"{total}")
+                    m2.metric("Win Rate (Closed)", f"{win_rate:.1f}%")
+                    m3.metric("Avg Return", f"{avg_ret:+.2f}%")
+                    m4.metric("Max Profit Hit", f"{max_ret:+.2f}%" if total > 0 else "0.00%")
+                    m5.metric("Active Signals", f"{active}")
+
+                    # Charts Section
+                    st.markdown("### 📊 Analytics & Distribution")
+                    chart_col1, chart_col2 = st.columns(2)
+                    
+                    with chart_col1:
+                        st.markdown("##### Hits per Day (Past Week)")
+                        daily_counts = df_perf.groupby("Signal Date").size().reset_index(name="Hits")
+                        st.bar_chart(daily_counts.set_index("Signal Date"))
+                        
+                    with chart_col2:
+                        st.markdown("##### Outcome Distribution")
+                        outcome_counts = df_perf.groupby("Outcome").size().reset_index(name="Count")
+                        st.bar_chart(outcome_counts.set_index("Outcome"))
+
+                    # Styled dataframe
+                    st.markdown("### 📑 Detailed Signal & Execution History")
+                    st.dataframe(
+                        style_generic_performance_dataframe(df_perf.copy(), theme=st.session_state.theme),
+                        use_container_width=True,
+                        hide_index=True
+                    )
+
+                    # Dated CSV download
+                    csv_data = df_perf.to_csv(index=False).encode('utf-8')
+                    date_now = datetime.now().strftime("%Y%m%d_%H%M")
+                    st.download_button(
+                        label="📥 Download Performance Report CSV",
+                        data=csv_data,
+                        file_name=f"swing_performance_{date_now}.csv",
+                        mime="text/csv",
+                        use_container_width=True
+                    )
+
+            except Exception as e:
+                status_placeholder.error(f"Error evaluating swing performance: {e}")
+                st.exception(e)
+
+    # ── TAB 2: Intraday & Options Performance ──
+    with perf_tab_intra_opt:
+        st.markdown("#### ⚡ Intraday & Options Performance Report")
+        st.caption("Retrieves real-time 15m details over the past 5 trading days to track intraday setups and option spreads outcomes.")
+
+        run_intra_perf_btn = st.button("⚡ Run Intraday & Options Performance Evaluation", type="primary", use_container_width=True)
+
+        if run_intra_perf_btn:
+            status_p = st.empty()
+            with status_p.container():
+                st.info("Loading 15-minute price history and simulating trades...")
+
+            try:
+                # Use standard High Momentum presets for evaluation
+                universe = PRESET_UNIVERSES["High Momentum & Beta (F&O)"][:10] # Evaluates top 10 liquid symbols to prevent rate limits
+                
+                df_intra = backfill_and_evaluate_intraday(universe, days=5)
+                
+                if df_intra.empty:
+                    status_p.warning("No Intraday buy/confirmation triggers found in the past 5 trading days for the screened universe.")
+                else:
+                    # Evaluate options strategy performance based on the same signals
+                    df_options = evaluate_options_performance(
+                        [{"Symbol": r["Symbol"], "Signal Date": r["Signal Time"][:10], "Entry Price": r["Entry Price"], "Outcome": r["Outcome"], "Action": "BUY"} for _, r in df_intra.iterrows()],
+                        download_prices(universe)
+                    )
+                    status_p.empty()
+
+                    # 1. Intraday Section
+                    st.markdown("### ⚡ Intraday 15m Signal Analytics")
+                    i_total = len(df_intra)
+                    i_t1 = len(df_intra[df_intra["Outcome"] == "Hit Target 1%"])
+                    i_t2 = len(df_intra[df_intra["Outcome"] == "Hit Target 2%"])
+                    i_stopped = len(df_intra[df_intra["Outcome"] == "Stopped Out"])
+                    i_active = len(df_intra[df_intra["Outcome"] == "Active"])
+                    
+                    i_closed = i_t1 + i_t2 + i_stopped
+                    i_win_rate = ((i_t1 + i_t2) / i_closed * 100.0) if i_closed > 0 else 0.0
+                    i_avg_ret = df_intra["Return %"].mean()
+
+                    im1, im2, im3, im4 = st.columns(4)
+                    im1.metric("Intraday Triggers", f"{i_total}")
+                    im2.metric("Intraday Win Rate", f"{i_win_rate:.1f}%")
+                    im3.metric("Avg Return per Trade", f"{i_avg_ret:+.2f}%")
+                    im4.metric("Stopped Out", f"{i_stopped}")
+
+                    st.dataframe(
+                        style_generic_performance_dataframe(df_intra.copy(), theme=st.session_state.theme),
+                        use_container_width=True,
+                        hide_index=True
+                    )
+
+                    # 2. Options Section
+                    if not df_options.empty:
+                        st.markdown("---")
+                        st.markdown("### 🎯 Gated Options Strategy Performance")
+                        st.caption("Simulates performance of recommended debit spreads (Bull Call / Bear Put) on the trigger assets.")
+
+                        opt_pnl = df_options["Estimated P&L"].sum()
+                        opt_win = len(df_options[df_options["Status"].str.contains("Target")])
+                        opt_loss = len(df_options[df_options["Status"].str.contains("Stop")])
+                        opt_total = len(df_options)
+                        opt_win_rate = (opt_win / (opt_win + opt_loss) * 100.0) if (opt_win + opt_loss) > 0 else 0.0
+
+                        om1, om2, om3, om4 = st.columns(4)
+                        om1.metric("Recommended Spreads", f"{opt_total}")
+                        om1.caption("Gated by MTF + Chain Score")
+                        om2.metric("Estimated Total P&L", f"₹{opt_pnl:+,.2f}", delta_color="normal")
+                        om3.metric("Options Win Rate", f"{opt_win_rate:.1f}%")
+                        om4.metric("Outcome Split (W/L)", f"{opt_win}W / {opt_loss}L")
+
+                        st.dataframe(
+                            style_generic_performance_dataframe(df_options.copy(), theme=st.session_state.theme),
+                            use_container_width=True,
+                            hide_index=True
+                        )
+
+                        # Combined CSV Download
+                        combined_csv = df_intra.to_csv(index=False)
+                        st.download_button(
+                            label="📥 Download Intraday Performance Report",
+                            data=combined_csv.encode('utf-8'),
+                            file_name=f"intraday_performance_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                            mime="text/csv",
+                            use_container_width=True
+                        )
+            except Exception as e:
+                status_p.error(f"Error evaluating intraday & options performance: {e}")
+                st.exception(e)
 

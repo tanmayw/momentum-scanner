@@ -130,6 +130,18 @@
 
 ---
 
+## Phase 11: Performance Monitoring & Signal Tracking ✅
+
+- [x] 11.1 Created modular `performance_monitor.py` for signal backfilling, performance evaluation, caching, and outcome logic.
+- [x] 11.2 Re-enabled `🎯 Options Strategy` tri-mode navigation in `streamlit_app.py`.
+- [x] 11.3 Added `📊 Performance Monitor` mode as the fourth radio button in navigation.
+- [x] 11.4 Built performance tabs: Swing report (caching historical signals in `swing_signals_history.json`, outcome logic, win rate, return stats) and Intraday/Options report (15m evaluation of F&O universe, options spread P&L simulation).
+- [x] 11.5 Integrated charts (daily signal counts and Win/Loss outcome distribution) and generic performance table styling.
+- [x] 11.6 Added dated CSV downloads for signal logs.
+- [x] 11.7 Updated specifications (`spec.md`) and tasks (`tasks.md`) documentation.
+
+---
+
 ## Backlog / Future Enhancements
 
 - [ ] B1. Greeks calculation (Delta, Gamma, Theta, Vega) using analytical Black-Scholes formulas.
@@ -138,3 +150,4 @@
 - [ ] B4. Sector/industry filter (show only specific NSE sectors).
 - [ ] B5. Watchlist persistence (save/load to local JSON or browser session).
 - [ ] B6. Weekly email/Telegram digest of top qualified options setups.
+
