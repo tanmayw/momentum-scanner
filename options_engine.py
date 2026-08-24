@@ -674,50 +674,91 @@ def generate_synthetic_option_chain(symbol: str, spot: float) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _normalize_expiry(date_str: str) -> str:
+    """
+    Normalize NSE expiry date strings (e.g., '28-Aug-2025' or '2025-08-28') to
+    consistent ISO format 'YYYY-MM-DD' for reliable display and parsing.
+    """
+    if not date_str or not isinstance(date_str, str):
+        return date_str
+    # NSE API returns dates like '28-Aug-2025'
+    for fmt in ("%d-%b-%Y", "%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y"):
+        try:
+            return datetime.strptime(date_str.strip(), fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    return date_str  # Return as-is if no format matched
+
+
 def fetch_or_simulate_option_chain(symbol: str, spot: float) -> pd.DataFrame:
     """
-    Fetch option chain from NSE India or fall back to high-fidelity synthetic model.
+    Fetch option chain from NSE India (https://www.nseindia.com/option-chain)
+    or fall back to high-fidelity synthetic model.
+    Expiry dates are normalized to ISO format 'YYYY-MM-DD'.
     """
     clean_sym = symbol.strip().upper().replace(".NS", "").replace("^", "")
-    indices = {"NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY"}
-    
+    indices = {"NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX"}
+
     try:
         session = requests.Session()
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+        # Full browser headers to pass NSE's bot protection
+        base_headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
             "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Connection": "keep-alive",
+            "DNT": "1",
         }
-        session.headers.update(headers)
-        
-        # Step 1: Hit homepage to get cookies
-        session.get("https://www.nseindia.com", timeout=10)
-        
-        # Step 2: Fetch API
+        session.headers.update(base_headers)
+
+        # Step 1: Hit NSE homepage to acquire session cookies
+        session.get(
+            "https://www.nseindia.com",
+            headers={**base_headers, "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"},
+            timeout=12,
+        )
+        # Step 2: Visit option-chain page to get additional CSRF/session cookies
+        session.get(
+            "https://www.nseindia.com/option-chain",
+            headers={**base_headers, "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                     "Referer": "https://www.nseindia.com/"},
+            timeout=12,
+        )
+
+        # Step 3: Fetch option chain API
         if clean_sym in indices:
             url = f"https://www.nseindia.com/api/option-chain-indices?symbol={clean_sym}"
         else:
             safe_sym = quote(clean_sym)
             url = f"https://www.nseindia.com/api/option-chain-equities?symbol={safe_sym}"
-            
-        headers.update({"Accept": "application/json, text/javascript, */*; q=0.01"})
-        session.headers.update(headers)
-        
-        resp = session.get(url, timeout=10)
+
+        api_headers = {
+            **base_headers,
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+            "Referer": "https://www.nseindia.com/option-chain",
+            "X-Requested-With": "XMLHttpRequest",
+        }
+        resp = session.get(url, headers=api_headers, timeout=15)
+
         if resp.status_code == 200:
             data = resp.json()
             records = data.get("records", {})
             expiry_dates = records.get("expiryDates", [])
-            
+
             if expiry_dates and records.get("data"):
-                nearest_exp = expiry_dates[0]
+                # Use the nearest (first) expiry
+                nearest_exp_raw = expiry_dates[0]
+                nearest_exp = _normalize_expiry(nearest_exp_raw)
                 rows = []
+
                 for item in records["data"]:
-                    if item.get("expiryDate") != nearest_exp:
+                    item_expiry_raw = item.get("expiryDate", "")
+                    item_expiry = _normalize_expiry(item_expiry_raw)
+                    if item_expiry != nearest_exp:
                         continue
-                        
+
                     strike = float(item["strikePrice"])
-                    
+
                     if "CE" in item:
                         ce = item["CE"]
                         rows.append({
@@ -730,9 +771,9 @@ def fetch_or_simulate_option_chain(symbol: str, spot: float) -> pd.DataFrame:
                             "volume": int(ce.get("totalTradedVolume", 0)),
                             "oi": int(ce.get("openInterest", 0)),
                             "change_oi": int(ce.get("changeinOpenInterest", 0)),
-                            "iv": float(ce.get("impliedVolatility", 0.0))
+                            "iv": float(ce.get("impliedVolatility", 0.0)),
                         })
-                    
+
                     if "PE" in item:
                         pe = item["PE"]
                         rows.append({
@@ -745,9 +786,9 @@ def fetch_or_simulate_option_chain(symbol: str, spot: float) -> pd.DataFrame:
                             "volume": int(pe.get("totalTradedVolume", 0)),
                             "oi": int(pe.get("openInterest", 0)),
                             "change_oi": int(pe.get("changeinOpenInterest", 0)),
-                            "iv": float(pe.get("impliedVolatility", 0.0))
+                            "iv": float(pe.get("impliedVolatility", 0.0)),
                         })
-                        
+
                 df = pd.DataFrame(rows)
                 ok, _ = validate_chain(df)
                 if ok:

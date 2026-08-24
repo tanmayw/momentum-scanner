@@ -1635,14 +1635,25 @@ else:
             key="opt_screener_u_mode"
         )
 
+        # Options-specific preset universes (stocks + indices)
+        OPT_PRESET_UNIVERSES = {
+            "NSE Indices (NIFTY / BANKNIFTY / FINNIFTY)": ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY"],
+            "Nifty 50 Liquid Top": [
+                "RELIANCE", "HDFCBANK", "ICICIBANK", "INFY", "TCS", "ITC", "BHARTIARTL",
+                "LT", "SBIN", "AXISBANK", "KOTAKBANK", "HINDUNILVR", "M&M", "TATAMOTORS",
+                "BAJFINANCE", "MARUTI", "SUNPHARMA", "NTPC", "POWERGRID", "TITAN"
+            ],
+            **{k: v for k, v in PRESET_UNIVERSES.items() if k != "Nifty 50 Liquid Top"},
+        }
+
         if opt_u_mode == "Preset Index/Sector":
             opt_preset_name = st.selectbox(
                 "Select Preset Universe",
-                list(PRESET_UNIVERSES.keys()),
+                list(OPT_PRESET_UNIVERSES.keys()),
                 index=0,
                 key="opt_screener_preset_choice"
             )
-            screen_universe = PRESET_UNIVERSES[opt_preset_name]
+            screen_universe = OPT_PRESET_UNIVERSES[opt_preset_name]
             st.caption(f"Symbols ({len(screen_universe)}): {', '.join(screen_universe)}")
         elif opt_u_mode == "Top Candidates from Intraday Scan":
             if "intraday_results" in st.session_state and not st.session_state.intraday_results.empty:
@@ -1686,8 +1697,17 @@ else:
             for i, sym in enumerate(screen_universe):
                 try:
                     # 1. Multi-Timeframe Technical & Momentum Evaluation
-                    d_df, h_df, m_df = download_intraday_timeframes(sym)
-                    intra_eval = evaluate_stock_intraday(sym, d_df=d_df, h_df=h_df, m_df=m_df)
+                    # Map NSE index symbols to yfinance tickers for spot price
+                    _INDEX_YF_MAP = {
+                        "NIFTY": "^NSEI",
+                        "BANKNIFTY": "^NSEBANK",
+                        "FINNIFTY": "NIFTY_FIN_SERVICE.NS",
+                        "MIDCPNIFTY": "^CNXMIDCAP",
+                        "SENSEX": "^BSESN",
+                    }
+                    _is_index = sym in _INDEX_YF_MAP
+                    d_df, h_df, m_df = download_intraday_timeframes(_INDEX_YF_MAP.get(sym, sym))
+                    intra_eval = evaluate_stock_intraday(_INDEX_YF_MAP.get(sym, sym), d_df=d_df, h_df=h_df, m_df=m_df)
 
                     if intra_eval and intra_eval.get("Score") is not None and intra_eval.get("Price") is not None:
                         sp = float(intra_eval["Price"])
@@ -1706,7 +1726,8 @@ else:
                         else:
                             tech_dir = "NEUTRAL"
                     else:
-                        raw_d = download_ticker_data(sym, "60d", "1d")
+                        yf_sym = _INDEX_YF_MAP.get(sym, sym)
+                        raw_d = download_ticker_data(yf_sym, "60d", "1d")
                         sp = float(raw_d["Close"].iloc[-1]) if not raw_d.empty else 1000.0
                         c = raw_d["Close"]
                         e20 = float(ema(c, 20).iloc[-1])
@@ -1769,6 +1790,7 @@ else:
 
                     screen_rows.append({
                         "Symbol": sym,
+                        "Expiry": ca.get("expiry", "—"),
                         "Spot": sp,
                         "Bias": composite_bias,
                         "MTF_Score": real_mtf_score,
@@ -1843,7 +1865,13 @@ else:
                     key="chosen_inspect_sym_box"
                 )
             with insp_col2:
-                tv_link = f"https://in.tradingview.com/chart/?symbol=NSE:{chosen_inspect_sym}"
+                # Indices use a different TradingView symbol format
+                _TV_INDEX_MAP = {
+                    "NIFTY": "NSE:NIFTY50", "BANKNIFTY": "NSE:BANKNIFTY",
+                    "FINNIFTY": "NSE:FINNIFTY", "MIDCPNIFTY": "NSE:MIDCPNIFTY",
+                }
+                tv_sym = _TV_INDEX_MAP.get(chosen_inspect_sym, f"NSE:{chosen_inspect_sym}")
+                tv_link = f"https://in.tradingview.com/chart/?symbol={tv_sym}"
                 st.markdown(f"<br><a href='{tv_link}' target='_blank' style='color:#38bdf8;font-size:0.9rem;'>🔗 Open {chosen_inspect_sym} on TradingView →</a>", unsafe_allow_html=True)
 
             if chosen_inspect_sym and chosen_inspect_sym in s_map:
