@@ -677,6 +677,9 @@ def evaluate_tracked_signals_performance():
                 d = download_ticker_data(yf_sym, "1mo", "1d")
                 if d.empty:
                     continue
+                # Remove timezone info if any
+                if d.index.tz is not None:
+                    d.index = d.index.tz_localize(None)
                 # Slice from signal date
                 post_sig = d.loc[d.index >= pd.to_datetime(sig_date_str)]
                 if post_sig.empty:
@@ -712,6 +715,9 @@ def evaluate_tracked_signals_performance():
                 d = download_ticker_data(yf_sym, "5d", "15m")
                 if d.empty:
                     continue
+                # Remove timezone info if any
+                if d.index.tz is not None:
+                    d.index = d.index.tz_localize(None)
                 # Slice from signal time
                 post_sig = d.loc[d.index >= pd.to_datetime(sig_time_str)]
                 if post_sig.empty:

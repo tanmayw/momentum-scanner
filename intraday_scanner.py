@@ -121,7 +121,10 @@ def calculate_position_size(capital: float, risk_percent: float, entry: float, s
 def download_ticker_data(symbol: str, period: str, interval: str) -> pd.DataFrame:
     """Download OHLCV data for an NSE symbol from yfinance."""
     clean_sym = symbol.strip().upper().replace("&", "-").replace(" ", "")
-    ticker = f"{clean_sym}.NS"
+    if clean_sym.startswith("^") or clean_sym.endswith(".NS"):
+        ticker = clean_sym
+    else:
+        ticker = f"{clean_sym}.NS"
     try:
         raw = yf.download(
             ticker,

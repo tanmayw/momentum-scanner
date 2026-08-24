@@ -1277,22 +1277,85 @@ if st.session_state.app_view == "Swing Momentum":
                             use_container_width=True
                         )
 
-                    view["Symbol"] = view["Symbol"].apply(
+                    # Load tracked swing symbols
+                    tracked_signals = load_tracked_signals()
+                    tracked_swing_syms = {s["symbol"].upper() for s in tracked_signals if s["type"] == "Swing"}
+                    
+                    view_edit = view.copy()
+                    view_edit.insert(3, "Track", view_edit["Symbol"].apply(lambda s: s.upper() in tracked_swing_syms))
+                    
+                    view_edit["Symbol"] = view_edit["Symbol"].apply(
                         lambda s: f"https://in.tradingview.com/chart/?symbol=NSE:{s}"
                     )
-                    styled_view = style_dataframe(view, theme=st.session_state.theme)
-                    st.dataframe(
-                        styled_view,
+                    
+                    # Prefix emojis
+                    view_edit["Action"] = view_edit["Action"].map({
+                        "BUY": "🟢 BUY",
+                        "WATCH / PULLBACK": "🟡 WATCH",
+                        "WATCHLIST": "🔵 WATCHLIST",
+                        "AVOID": "🔴 AVOID"
+                    }).fillna(view_edit["Action"])
+                    
+                    # Display editor
+                    edited_swing = st.data_editor(
+                        view_edit,
                         column_config={
+                            "Track": st.column_config.CheckboxColumn("Track", default=False),
                             "Symbol": st.column_config.LinkColumn(
                                 "Symbol",
                                 help="Click to open chart on TradingView",
                                 display_text=r"https://in\.tradingview\.com/chart/\?symbol=NSE:(.*)"
-                            )
+                            ),
+                            "Price": st.column_config.NumberColumn("Price", format="₹%.2f"),
+                            "Stop Loss": st.column_config.NumberColumn("Stop Loss", format="₹%.2f"),
+                            "Target 2%": st.column_config.NumberColumn("Target 2%", format="₹%.2f"),
+                            "Target 5%": st.column_config.NumberColumn("Target 5%", format="₹%.2f"),
+                            "3M Return": st.column_config.NumberColumn("3M Return", format="%+.2f%%"),
+                            "6M Return": st.column_config.NumberColumn("6M Return", format="%+.2f%%"),
+                            "RS vs Nifty": st.column_config.NumberColumn("RS vs Nifty", format="%+.2f%%"),
+                            "52W Distance": st.column_config.NumberColumn("52W Distance", format="%.2f%%"),
+                            "Vol Ratio": st.column_config.NumberColumn("Vol Ratio", format="%.2fx"),
+                            "RR Ratio": st.column_config.NumberColumn("RR Ratio", format="%.2f:1"),
+                            "Risk %": st.column_config.NumberColumn("Risk %", format="%.2f%%"),
                         },
+                        disabled=[c for c in view_edit.columns if c != "Track"],
                         use_container_width=True,
-                        hide_index=True
+                        hide_index=True,
+                        key="swing_editor"
                     )
+                    
+                    # Handle edits
+                    if "swing_editor" in st.session_state and st.session_state.swing_editor.get("edited_rows"):
+                        edits = st.session_state.swing_editor["edited_rows"]
+                        for row_idx_str, edit in edits.items():
+                            row_idx = int(row_idx_str)
+                            if "Track" in edit:
+                                is_tracked = edit["Track"]
+                                url = view_edit.iloc[row_idx]["Symbol"]
+                                import urllib.parse
+                                parsed = urllib.parse.urlparse(url)
+                                params = urllib.parse.parse_qs(parsed.query)
+                                symbol = params.get("symbol", [url])[0].split("NSE:")[-1]
+                                
+                                if is_tracked:
+                                    sig_row = scored[scored["Symbol"] == symbol].iloc[0]
+                                    add_tracked_signal(
+                                        symbol=symbol,
+                                        sig_type="Swing",
+                                        entry_price=sig_row["Price"],
+                                        stop_loss=sig_row["Stop Loss"],
+                                        target_2=sig_row["Target 2%"],
+                                        target_5=sig_row["Target 5%"],
+                                        score=sig_row["Final Score"],
+                                        action=sig_row["Action"]
+                                    )
+                                    st.success(f"Started tracking {symbol} for Swing performance!")
+                                else:
+                                    tracked = load_tracked_signals()
+                                    tracked = [s for s in tracked if not (s["symbol"].upper() == symbol.upper() and s["type"] == "Swing")]
+                                    save_tracked_signals(tracked)
+                                    st.warning(f"Stopped tracking {symbol}.")
+                                st.rerun()
 
                     st.markdown(f"""
                     <div class="legend">
@@ -1304,38 +1367,9 @@ if st.session_state.app_view == "Swing Momentum":
                             <span class="leg-txt">WATCHLIST &mdash; Score &ge; 65</span></div>
                         <div class="leg-item"><span class="leg-dot" style="background:{T['red']}"></span>
                             <span class="leg-txt">AVOID &mdash; Score &lt; 65</span></div>
-                        <div class="leg-tip">Click any symbol to open TradingView chart &rarr;</div>
+                        <div class="leg-tip">Check 'Track' in the grid to add to performance monitor watchlist. &rarr;</div>
                     </div>
                     """, unsafe_allow_html=True)
-
-                    # Manual Track Section
-                    st.markdown("---")
-                    st.markdown("#### 📌 Track Swing Recommendation")
-                    track_col1, track_col2 = st.columns([3, 1])
-                    with track_col1:
-                        # Extract symbol names from the chart link column
-                        qualified_symbols = view["Symbol"].apply(lambda link: link.split("NSE:")[-1]).tolist()
-                        symbol_to_track = st.selectbox("Select Symbol to track for Swing Performance", qualified_symbols, key="swing_track_sym_select")
-                    with track_col2:
-                        st.markdown("<br>", unsafe_allow_html=True)
-                        track_btn = st.button("📌 Track Signal", key="swing_track_btn", use_container_width=True)
-                        
-                    if track_btn and symbol_to_track:
-                        sig_row = scored[scored["Symbol"] == symbol_to_track].iloc[0]
-                        success, msg = add_tracked_signal(
-                            symbol=symbol_to_track,
-                            sig_type="Swing",
-                            entry_price=sig_row["Price"],
-                            stop_loss=sig_row["Stop Loss"],
-                            target_2=sig_row["Target 2%"],
-                            target_5=sig_row["Target 5%"],
-                            score=sig_row["Final Score"],
-                            action=sig_row["Action"]
-                        )
-                        if success:
-                            st.success(msg)
-                        else:
-                            st.warning(msg)
 
     else:
         st.markdown(f"""
@@ -1528,25 +1562,86 @@ elif st.session_state.app_view == "Intraday MTF":
                             use_container_width=True
                         )
 
-                    view_intra["Symbol"] = view_intra["Symbol"].apply(
+                    # Load tracked intraday symbols
+                    tracked_signals = load_tracked_signals()
+                    tracked_intra_syms = {s["symbol"].upper() for s in tracked_signals if s["type"] == "Intraday"}
+                    
+                    view_intra_edit = view_intra.copy()
+                    view_intra_edit.insert(3, "Track", view_intra_edit["Symbol"].apply(lambda s: s.upper() in tracked_intra_syms))
+                    
+                    view_intra_edit["Symbol"] = view_intra_edit["Symbol"].apply(
                         lambda s: f"https://in.tradingview.com/chart/?symbol=NSE:{s}"
                     )
-
-                    styled_intra = style_intraday_dataframe(view_intra, theme=st.session_state.theme)
-                    st.dataframe(
-                        styled_intra,
+                    
+                    # Prefix emojis
+                    view_intra_edit["Signal"] = view_intra_edit["Signal"].map({
+                        "STRONG BUY CANDIDATE": "🟢 STRONG BUY",
+                        "BUY ON CONFIRMATION": "🔵 BUY CONFIRM",
+                        "WATCH": "🟡 WATCH",
+                        "NO TRADE": "🔴 NO TRADE"
+                    }).fillna(view_intra_edit["Signal"])
+                    
+                    # Display editor
+                    edited_intra = st.data_editor(
+                        view_intra_edit,
                         column_config={
+                            "Track": st.column_config.CheckboxColumn("Track", default=False),
                             "Symbol": st.column_config.LinkColumn(
                                 "Symbol",
                                 help="Click to open 15m chart on TradingView",
                                 display_text=r"https://in\.tradingview\.com/chart/\?symbol=NSE:(.*)"
                             ),
-                            "Signal": st.column_config.TextColumn("Signal", width="medium"),
-                            "Setup": st.column_config.TextColumn("Setup", width="small"),
+                            "Price": st.column_config.NumberColumn("Price", format="₹%.2f"),
+                            "VWAP": st.column_config.NumberColumn("VWAP", format="₹%.2f"),
+                            "Score": st.column_config.NumberColumn("Score", format="%.1f"),
+                            "Daily_RSI": st.column_config.NumberColumn("Daily RSI", format="%.1f"),
+                            "Hourly_RSI": st.column_config.NumberColumn("Hourly RSI", format="%.1f"),
+                            "M15_RSI": st.column_config.NumberColumn("15m RSI", format="%.1f"),
+                            "Volume_Ratio": st.column_config.NumberColumn("Volume Ratio", format="%.2fx"),
+                            "Stop_Loss": st.column_config.NumberColumn("Stop Loss", format="₹%.2f"),
+                            "Target_1": st.column_config.NumberColumn("Target 1%", format="₹%.2f"),
+                            "Target_2": st.column_config.NumberColumn("Target 2%", format="₹%.2f"),
+                            "RR_Ratio": st.column_config.NumberColumn("R:R Ratio", format="%.2f:1"),
+                            "Quantity": st.column_config.NumberColumn("Quantity", format="%d"),
                         },
+                        disabled=[c for c in view_intra_edit.columns if c != "Track"],
                         use_container_width=True,
-                        hide_index=True
+                        hide_index=True,
+                        key="intra_editor"
                     )
+                    
+                    # Handle edits
+                    if "intra_editor" in st.session_state and st.session_state.intra_editor.get("edited_rows"):
+                        edits = st.session_state.intra_editor["edited_rows"]
+                        for row_idx_str, edit in edits.items():
+                            row_idx = int(row_idx_str)
+                            if "Track" in edit:
+                                is_tracked = edit["Track"]
+                                url = view_intra_edit.iloc[row_idx]["Symbol"]
+                                import urllib.parse
+                                parsed = urllib.parse.urlparse(url)
+                                params = urllib.parse.parse_qs(parsed.query)
+                                symbol = params.get("symbol", [url])[0].split("NSE:")[-1]
+                                
+                                if is_tracked:
+                                    sig_row = results_df[results_df["Symbol"] == symbol].iloc[0]
+                                    add_tracked_signal(
+                                        symbol=symbol,
+                                        sig_type="Intraday",
+                                        entry_price=sig_row["Price"],
+                                        stop_loss=sig_row["Stop_Loss"],
+                                        target_1=sig_row["Target_1"],
+                                        target_2=sig_row["Target_2"],
+                                        score=sig_row["Score"],
+                                        action=sig_row["Signal"]
+                                    )
+                                    st.success(f"Started tracking {symbol} for Intraday performance!")
+                                else:
+                                    tracked = load_tracked_signals()
+                                    tracked = [s for s in tracked if not (s["symbol"].upper() == symbol.upper() and s["type"] == "Intraday")]
+                                    save_tracked_signals(tracked)
+                                    st.warning(f"Stopped tracking {symbol}.")
+                                st.rerun()
 
                     st.markdown(f"""
                     <div class="legend">
@@ -1558,37 +1653,9 @@ elif st.session_state.app_view == "Intraday MTF":
                             <span class="leg-txt">WATCH &mdash; Score &ge; 65</span></div>
                         <div class="leg-item"><span class="leg-dot" style="background:{T['purple']}"></span>
                             <span class="leg-txt">Setups: BREAKOUT &bull; VWAP MOMENTUM &bull; PULLBACK / RECLAIM</span></div>
-                        <div class="leg-tip">Click any symbol to open TradingView live chart &rarr;</div>
+                        <div class="leg-tip">Check 'Track' in the grid to add to performance monitor watchlist. &rarr;</div>
                     </div>
                     """, unsafe_allow_html=True)
-
-                    # Manual Track Section for Active Scan
-                    st.markdown("---")
-                    st.markdown("#### 📌 Track Intraday Recommendation")
-                    track_col1, track_col2 = st.columns([3, 1])
-                    with track_col1:
-                        qualified_symbols = view_intra["Symbol"].apply(lambda link: link.split("NSE:")[-1]).tolist()
-                        symbol_to_track = st.selectbox("Select Symbol to track for Intraday Performance", qualified_symbols, key="intra_active_track_sym_select")
-                    with track_col2:
-                        st.markdown("<br>", unsafe_allow_html=True)
-                        track_btn = st.button("📌 Track Signal", key="intra_active_track_btn", use_container_width=True)
-                        
-                    if track_btn and symbol_to_track:
-                        sig_row = results_df[results_df["Symbol"] == symbol_to_track].iloc[0]
-                        success, msg = add_tracked_signal(
-                            symbol=symbol_to_track,
-                            sig_type="Intraday",
-                            entry_price=sig_row["Price"],
-                            stop_loss=sig_row["Stop_Loss"],
-                            target_1=sig_row["Target_1"],
-                            target_2=sig_row["Target_2"],
-                            score=sig_row["Score"],
-                            action=sig_row["Signal"]
-                        )
-                        if success:
-                            st.success(msg)
-                        else:
-                            st.warning(msg)
 
         elif "intraday_results" in st.session_state and not st.session_state.intraday_results.empty:
             res_saved = st.session_state.intraday_results
@@ -1600,50 +1667,86 @@ elif st.session_state.app_view == "Intraday MTF":
                 "RR_Ratio", "Quantity"
             ]
             view_saved = res_saved[cols_display].copy()
-            view_saved["Symbol"] = view_saved["Symbol"].apply(
+            # Load tracked intraday symbols
+            tracked_signals = load_tracked_signals()
+            tracked_intra_syms = {s["symbol"].upper() for s in tracked_signals if s["type"] == "Intraday"}
+            
+            view_saved_edit = view_saved.copy()
+            view_saved_edit.insert(3, "Track", view_saved_edit["Symbol"].apply(lambda s: s.upper() in tracked_intra_syms))
+            
+            view_saved_edit["Symbol"] = view_saved_edit["Symbol"].apply(
                 lambda s: f"https://in.tradingview.com/chart/?symbol=NSE:{s}"
             )
-            styled_saved = style_intraday_dataframe(view_saved, theme=st.session_state.theme)
-            st.dataframe(
-                styled_saved,
+            
+            # Prefix emojis
+            view_saved_edit["Signal"] = view_saved_edit["Signal"].map({
+                "STRONG BUY CANDIDATE": "🟢 STRONG BUY",
+                "BUY ON CONFIRMATION": "🔵 BUY CONFIRM",
+                "WATCH": "🟡 WATCH",
+                "NO TRADE": "🔴 NO TRADE"
+            }).fillna(view_saved_edit["Signal"])
+            
+            # Display editor
+            edited_saved = st.data_editor(
+                view_saved_edit,
                 column_config={
+                    "Track": st.column_config.CheckboxColumn("Track", default=False),
                     "Symbol": st.column_config.LinkColumn(
                         "Symbol",
                         help="Click to open chart on TradingView",
                         display_text=r"https://in\.tradingview\.com/chart/\?symbol=NSE:(.*)"
-                    )
+                    ),
+                    "Price": st.column_config.NumberColumn("Price", format="₹%.2f"),
+                    "VWAP": st.column_config.NumberColumn("VWAP", format="₹%.2f"),
+                    "Score": st.column_config.NumberColumn("Score", format="%.1f"),
+                    "Daily_RSI": st.column_config.NumberColumn("Daily RSI", format="%.1f"),
+                    "Hourly_RSI": st.column_config.NumberColumn("Hourly RSI", format="%.1f"),
+                    "M15_RSI": st.column_config.NumberColumn("15m RSI", format="%.1f"),
+                    "Volume_Ratio": st.column_config.NumberColumn("Volume Ratio", format="%.2fx"),
+                    "Stop_Loss": st.column_config.NumberColumn("Stop Loss", format="₹%.2f"),
+                    "Target_1": st.column_config.NumberColumn("Target 1%", format="₹%.2f"),
+                    "Target_2": st.column_config.NumberColumn("Target 2%", format="₹%.2f"),
+                    "RR_Ratio": st.column_config.NumberColumn("R:R Ratio", format="%.2f:1"),
+                    "Quantity": st.column_config.NumberColumn("Quantity", format="%d"),
                 },
+                disabled=[c for c in view_saved_edit.columns if c != "Track"],
                 use_container_width=True,
-                hide_index=True
+                hide_index=True,
+                key="intra_saved_editor"
             )
-
-            # Manual Track Section for Saved Results
-            st.markdown("---")
-            st.markdown("#### 📌 Track Intraday Recommendation")
-            track_col1, track_col2 = st.columns([3, 1])
-            with track_col1:
-                qualified_symbols = view_saved["Symbol"].apply(lambda link: link.split("NSE:")[-1]).tolist()
-                symbol_to_track = st.selectbox("Select Symbol to track for Intraday Performance", qualified_symbols, key="intra_saved_track_sym_select")
-            with track_col2:
-                st.markdown("<br>", unsafe_allow_html=True)
-                track_btn = st.button("📌 Track Signal", key="intra_saved_track_btn", use_container_width=True)
-                
-            if track_btn and symbol_to_track:
-                sig_row = res_saved[res_saved["Symbol"] == symbol_to_track].iloc[0]
-                success, msg = add_tracked_signal(
-                    symbol=symbol_to_track,
-                    sig_type="Intraday",
-                    entry_price=sig_row["Price"],
-                    stop_loss=sig_row["Stop_Loss"],
-                    target_1=sig_row["Target_1"],
-                    target_2=sig_row["Target_2"],
-                    score=sig_row["Score"],
-                    action=sig_row["Signal"]
-                )
-                if success:
-                    st.success(msg)
-                else:
-                    st.warning(msg)
+            
+            # Handle edits
+            if "intra_saved_editor" in st.session_state and st.session_state.intra_saved_editor.get("edited_rows"):
+                edits = st.session_state.intra_saved_editor["edited_rows"]
+                for row_idx_str, edit in edits.items():
+                    row_idx = int(row_idx_str)
+                    if "Track" in edit:
+                        is_tracked = edit["Track"]
+                        url = view_saved_edit.iloc[row_idx]["Symbol"]
+                        import urllib.parse
+                        parsed = urllib.parse.urlparse(url)
+                        params = urllib.parse.parse_qs(parsed.query)
+                        symbol = params.get("symbol", [url])[0].split("NSE:")[-1]
+                        
+                        if is_tracked:
+                            sig_row = res_saved[res_saved["Symbol"] == symbol].iloc[0]
+                            add_tracked_signal(
+                                symbol=symbol,
+                                sig_type="Intraday",
+                                entry_price=sig_row["Price"],
+                                stop_loss=sig_row["Stop_Loss"],
+                                target_1=sig_row["Target_1"],
+                                target_2=sig_row["Target_2"],
+                                score=sig_row["Score"],
+                                action=sig_row["Signal"]
+                            )
+                            st.success(f"Started tracking {symbol} for Intraday performance!")
+                        else:
+                            tracked = load_tracked_signals()
+                            tracked = [s for s in tracked if not (s["symbol"].upper() == symbol.upper() and s["type"] == "Intraday")]
+                            save_tracked_signals(tracked)
+                            st.warning(f"Stopped tracking {symbol}.")
+                        st.rerun()
         else:
             st.markdown(f"""
             <div class="idle">
