@@ -118,7 +118,7 @@ $$\text{Quantity} = \left\lfloor \frac{\text{Capital} \times (\text{Risk \%} / 1
 
 ```mermaid
 flowchart TD
-    MTF["MTF Direction & Momentum Score (Score ≥ 75)"] --> ChainIngest["Option Chain Ingestion\n(expiry, strike, CE/PE, ltp, bid, ask, vol, oi, chg_oi, iv)"]
+    MTF["MTF Direction & Momentum Score (Score ≥ 75)"] --> ChainIngest["Option Chain Ingestion\n(expiry, strike, CE/PE, ltp, bid, ask, vol, oi, chg_oi, iv)\nvia NSE India API"]
     ChainIngest --> ChainScore["Option Chain Analytics & Scoring (0–100)\n• Total OI & Put Support (+20)\n• Change in OI (+15)\n• Volume (+10)\n• ATM IV (+15)\n• Bid/Ask Spread (+15)\n• PCR Alignment (+10)\n• ATM Liquidity (+15)"]
     ChainScore --> ChainGate{"Chain Gate\nScore ≥ 75 & Liquid?"}
     ChainGate -- "No" --> GatedOut["NO TRADE"]
@@ -154,7 +154,7 @@ flowchart TD
 
 ## 6. UI & Presentation Specifications
 
-- **Dual-Theme Engine**: Dark Terminal (`#050b14`) & High-Contrast Light Mode (`#f8fafc`).
+- **Dual-Theme Engine**: Default Light Mode (`#f8fafc`) & Dark Terminal (`#050b14`).
 - **3-Mode Switcher**: Radio selector (`🚀 Swing Momentum`, `⚡ Intraday MTF`, `🎯 Options Strategy`).
 - **Interactive Deep Dive**: Real-time 15-minute price vs VWAP charts + visual Options Payoff Diagrams at expiry.
 - **Exporting**: One-click dated CSV download across all 3 modules.

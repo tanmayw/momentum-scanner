@@ -67,7 +67,7 @@ Streamlit Controller (streamlit_app.py) — port 8501
 ### 3.1 Options Strategy Pipeline
 ```
 Select Symbol & Input MTF Direction/Score
-    → Fetch Option Chain (live yfinance or synthetic model)
+    → Fetch Option Chain (live NSE India API via requests or synthetic model)
     → Validate Columns (expiry, strike, option_type, ltp, bid, ask, vol, oi, chg_oi, iv)
     → Analyze Chain: PCR, Total OI, ATM IV, ATM Spread %, Chain Score (0-100)
     → Evaluate Gate: Chain Score ≥ 75 & MTF Score ≥ 75?

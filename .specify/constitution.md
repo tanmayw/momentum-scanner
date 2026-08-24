@@ -23,7 +23,7 @@ Zero third-party SaaS dependencies or paid data subscriptions are required.
 - **Options Strategy Engine**: Strictly follows the mandatory flow: **MTF Direction/Score $\to$ Option Chain Analysis $\to$ Chain Gate ($\ge 75$) $\to$ Strategy Selection $\to$ Strike Selection $\to$ Risk Gate $\to$ Execution Recommendation**.
 
 ### IV. Aesthetic Excellence & Dual-Theme Consistency
-- Dual-theme engine (Dark Terminal & Accessible Light Mode) is standard across all views.
+- Dual-theme engine (Light Mode by default & Accessible Dark Terminal) is standard across all views.
 - Monospace typography (`JetBrains Mono`) for financial figures, custom KPI cards, responsive layout (`1060px` desktop container, mobile-first expanders), and interactive TradingView deep links.
 
 ### V. Risk-First Output & Dynamic Position Sizing
@@ -40,5 +40,5 @@ Zero third-party SaaS dependencies or paid data subscriptions are required.
 ## Technology Stack
 
 - **Framework**: Streamlit (`>=1.30.0`)
-- **Data Engine**: Pandas (`>=2.2`), NumPy (`>=1.26`), PyArrow (`>=15.0.0`), yfinance (`>=0.2.50`), Requests (`>=2.31`)
+- **Data Engine**: Pandas (`>=2.2`), NumPy (`>=1.26`), PyArrow (`>=15.0.0`), yfinance (`>=0.2.50`), Requests (`>=2.31`) (for NSE API)
 - **Port**: 8501 (default Streamlit port, local/cloud deployment)
