@@ -1067,17 +1067,17 @@ top_col_view, top_col_btn = st.columns([7.5, 2.5])
 MODE_OPTIONS = [
     "🚀 Swing Momentum (D · W · M)",
     "⚡ Intraday MTF (Daily · 1h · 15m)",
-    "🎯 Options Strategy (MTF + Chain Gate)",
     "📊 Performance Monitor"
 ]
 
 current_mode_idx = 0
 if st.session_state.app_view == "Intraday MTF":
     current_mode_idx = 1
-elif st.session_state.app_view == "Options Strategy":
-    current_mode_idx = 2
 elif st.session_state.app_view == "Performance Monitor":
-    current_mode_idx = 3
+    current_mode_idx = 2
+elif st.session_state.app_view == "Options Strategy":
+    st.session_state.app_view = "Swing Momentum"
+    current_mode_idx = 0
 
 with top_col_view:
     app_view = st.radio(
@@ -1091,8 +1091,6 @@ with top_col_view:
         st.session_state.app_view = "Swing Momentum"
     elif "Intraday" in app_view:
         st.session_state.app_view = "Intraday MTF"
-    elif "Options" in app_view:
-        st.session_state.app_view = "Options Strategy"
     else:
         st.session_state.app_view = "Performance Monitor"
 

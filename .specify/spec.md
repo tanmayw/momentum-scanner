@@ -155,7 +155,7 @@ flowchart TD
 ## 6. UI & Presentation Specifications
 
 - **Dual-Theme Engine**: Default Light Mode (`#f8fafc`) & Dark Terminal (`#050b14`).
-- **4-Mode Switcher**: Radio selector (`🚀 Swing Momentum`, `⚡ Intraday MTF`, `🎯 Options Strategy`, `📊 Performance Monitor`).
+- **3-Mode Switcher**: Radio selector (`🚀 Swing Momentum`, `⚡ Intraday MTF`, `📊 Performance Monitor`).
 - **Interactive Deep Dive**: Real-time 15-minute price vs VWAP charts + visual Options Payoff Diagrams at expiry.
 - **Exporting**: One-click dated CSV download across all modules.
 
