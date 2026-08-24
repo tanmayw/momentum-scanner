@@ -15,4 +15,4 @@ env/
 .env
 
 # Streamlit
-.streamlit/
+.streamlit/secrets.toml
