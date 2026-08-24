@@ -594,3 +594,170 @@ def evaluate_options_performance(signals, data_map):
         })
         
     return pd.DataFrame(rows)
+
+
+# ─────────────────────────────────────────────
+# Manually Tracked Signals & Watchlist Helpers
+# ─────────────────────────────────────────────
+
+TRACKED_SIGNALS_PATH = Path("cache/tracked_signals.json")
+
+def load_tracked_signals():
+    if TRACKED_SIGNALS_PATH.exists():
+        try:
+            with open(TRACKED_SIGNALS_PATH, "r") as f:
+                return json.load(f)
+        except Exception:
+            return []
+    return []
+
+def save_tracked_signals(signals):
+    with open(TRACKED_SIGNALS_PATH, "w") as f:
+        json.dump(signals, f, indent=2)
+
+def add_tracked_signal(symbol, sig_type, entry_price, stop_loss, target_1=None, target_2=None, target_5=None, score=None, action="BUY"):
+    signals = load_tracked_signals()
+    now = datetime.now()
+    sig_date = now.strftime("%Y-%m-%d")
+    sig_time = now.strftime("%Y-%m-%d %H:%M")
+    
+    # Check if duplicate exists
+    for s in signals:
+        if s["symbol"].upper() == symbol.upper() and s["type"] == sig_type and s["signal_date"] == sig_date:
+            return False, f"Symbol {symbol} is already being tracked for {sig_type} on {sig_date}."
+            
+    signals.append({
+        "symbol": symbol.upper(),
+        "type": sig_type,
+        "signal_date": sig_date,
+        "signal_time": sig_time,
+        "entry_price": float(entry_price),
+        "stop_loss": float(stop_loss),
+        "target_1": float(target_1) if target_1 is not None else None,
+        "target_2": float(target_2) if target_2 is not None else None,
+        "target_5": float(target_5) if target_5 is not None else None,
+        "score": float(score) if score is not None else None,
+        "action": action
+    })
+    save_tracked_signals(signals)
+    return True, f"Successfully added {symbol} to tracked signals."
+
+def evaluate_tracked_signals_performance():
+    signals = load_tracked_signals()
+    if not signals:
+        return pd.DataFrame()
+        
+    rows = []
+    for sig in signals:
+        sym = sig["symbol"]
+        sig_type = sig["type"]
+        entry = sig["entry_price"]
+        sl = sig["stop_loss"]
+        t1 = sig.get("target_1")
+        t2 = sig.get("target_2")
+        t5 = sig.get("target_5")
+        sig_date_str = sig["signal_date"]
+        sig_time_str = sig["signal_time"]
+        
+        # Format index symbol
+        _INDEX_YF_MAP = {
+            "NIFTY": "^NSEI",
+            "BANKNIFTY": "^NSEBANK",
+            "FINNIFTY": "NIFTY_FIN_SERVICE.NS",
+            "MIDCPNIFTY": "^CNXMIDCAP",
+            "SENSEX": "^BSESN",
+        }
+        yf_sym = _INDEX_YF_MAP.get(sym, sym)
+        
+        try:
+            if sig_type == "Swing":
+                # Fetch recent daily data
+                d = download_ticker_data(yf_sym, "1mo", "1d")
+                if d.empty:
+                    continue
+                # Slice from signal date
+                post_sig = d.loc[d.index >= pd.to_datetime(sig_date_str)]
+                if post_sig.empty:
+                    current_close = entry
+                    max_high = entry
+                    outcome = "Active"
+                else:
+                    current_close = float(post_sig["Close"].iloc[-1])
+                    max_high = float(post_sig["High"].max())
+                    outcome = "Active"
+                    for _, bar in post_sig.iterrows():
+                        high = float(bar["High"])
+                        low = float(bar["Low"])
+                        
+                        hit_sl = low <= sl
+                        hit_t5 = t5 is not None and high >= t5
+                        hit_t2 = t2 is not None and high >= t2
+                        
+                        if hit_sl and (hit_t5 or hit_t2):
+                            outcome = "Stopped Out"
+                            break
+                        elif hit_sl:
+                            outcome = "Stopped Out"
+                            break
+                        elif hit_t5:
+                            outcome = "Hit Target 5%"
+                            break
+                        elif hit_t2:
+                            outcome = "Hit Target 2%"
+                            
+            else: # Intraday
+                # Fetch recent 15m data
+                d = download_ticker_data(yf_sym, "5d", "15m")
+                if d.empty:
+                    continue
+                # Slice from signal time
+                post_sig = d.loc[d.index >= pd.to_datetime(sig_time_str)]
+                if post_sig.empty:
+                    current_close = entry
+                    max_high = entry
+                    outcome = "Active"
+                else:
+                    current_close = float(post_sig["Close"].iloc[-1])
+                    max_high = float(post_sig["High"].max())
+                    outcome = "Active"
+                    for _, bar in post_sig.iterrows():
+                        high = float(bar["High"])
+                        low = float(bar["Low"])
+                        
+                        hit_sl = low <= sl
+                        hit_t2 = t2 is not None and high >= t2
+                        hit_t1 = t1 is not None and high >= t1
+                        
+                        if hit_sl and (hit_t2 or hit_t1):
+                            outcome = "Stopped Out"
+                            break
+                        elif hit_sl:
+                            outcome = "Stopped Out"
+                            break
+                        elif hit_t2:
+                            outcome = "Hit Target 2%"
+                            break
+                        elif hit_t1:
+                            outcome = "Hit Target 1%"
+                            
+            curr_return = ((current_close - entry) / entry) * 100.0
+            max_return = ((max_high - entry) / entry) * 100.0
+            
+            rows.append({
+                "Symbol": sym,
+                "Type": sig_type,
+                "Signal Date/Time": sig_time_str if sig_type == "Intraday" else sig_date_str,
+                "Entry Price": entry,
+                "Stop Loss": sl,
+                "Target 1%": t1 if t1 is not None else np.nan,
+                "Target 2%": t2 if t2 is not None else np.nan,
+                "Target 5%": t5 if t5 is not None else np.nan,
+                "Current Price": current_close,
+                "Return %": round(curr_return, 2),
+                "Max Gain %": round(max_return, 2),
+                "Outcome": outcome
+            })
+        except Exception:
+            continue
+            
+    return pd.DataFrame(rows)

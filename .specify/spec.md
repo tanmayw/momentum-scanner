@@ -179,9 +179,20 @@ The Performance Tracker evaluates the accuracy and outcomes of scanner recommend
 - **Intraday 15m Tracking**: Scans F&O High Momentum universe over the past 5 trading days using 15m historical price action. Tracks if subsequent 15m bars hit Target 1% (+1%), Target 2% (+2%), or Stop Loss (1.5 * ATR below entry price) first.
 - **Options Spread Simulation**: Backfills options spreads (Bull Call / Bear Put debit spreads) and calculates estimated payoffs and P&L based on the spot price movements of the underlying assets.
 
-### 7.3 Performance Dashboard UI Elements
+### 7.3 Manual Tracking & Persistent Watchlist
+- **Persistent Storage**: Tracks manually added signals inside `cache/tracked_signals.json`.
+- **Target Selection**:
+  - Swing scanner results page includes a dropdown of qualified signals and a Track button.
+  - Intraday deep-dive page contains a `📌 Track [Symbol] for Intraday Performance` button.
+- **Evaluation Mechanism**:
+  - Swing manual signals evaluate subsequent daily prices.
+  - Intraday manual signals evaluate subsequent 15m price bars starting from the trigger timestamp.
+- **Watchlist UI**: Shows KPI metrics (Win Rate, average return, active trades), a styled performance table, and a dropdown/button to remove symbols from tracking.
+
+### 7.4 Performance Dashboard UI Elements
 - **Performance KPIs**: Total Hits, Win Rate (closed trades), Average Return %, Max Return % Hit, and Active count.
 - **Visual Analytics**: Daily hits distribution bar chart and Win/Loss outcomes bar chart.
 - **Detailed History Log**: Fully styled dataframe highlighting green for profit/win outcomes and red for loss/stop outcomes, with TradingView links.
 - **Exporting**: Instant dated CSV download of performance records.
+
 

@@ -39,7 +39,11 @@ from performance_monitor import (
     backfill_swing_signals,
     evaluate_swing_performance,
     backfill_and_evaluate_intraday,
-    evaluate_options_performance
+    evaluate_options_performance,
+    load_tracked_signals,
+    save_tracked_signals,
+    add_tracked_signal,
+    evaluate_tracked_signals_performance
 )
 
 NSE_CSV_URLS = [
@@ -1304,6 +1308,35 @@ if st.session_state.app_view == "Swing Momentum":
                     </div>
                     """, unsafe_allow_html=True)
 
+                    # Manual Track Section
+                    st.markdown("---")
+                    st.markdown("#### 📌 Track Swing Recommendation")
+                    track_col1, track_col2 = st.columns([3, 1])
+                    with track_col1:
+                        # Extract symbol names from the chart link column
+                        qualified_symbols = view["Symbol"].apply(lambda link: link.split("NSE:")[-1]).tolist()
+                        symbol_to_track = st.selectbox("Select Symbol to track for Swing Performance", qualified_symbols, key="swing_track_sym_select")
+                    with track_col2:
+                        st.markdown("<br>", unsafe_allow_html=True)
+                        track_btn = st.button("📌 Track Signal", key="swing_track_btn", use_container_width=True)
+                        
+                    if track_btn and symbol_to_track:
+                        sig_row = scored[scored["Symbol"] == symbol_to_track].iloc[0]
+                        success, msg = add_tracked_signal(
+                            symbol=symbol_to_track,
+                            sig_type="Swing",
+                            entry_price=sig_row["Price"],
+                            stop_loss=sig_row["Stop Loss"],
+                            target_2=sig_row["Target 2%"],
+                            target_5=sig_row["Target 5%"],
+                            score=sig_row["Final Score"],
+                            action=sig_row["Action"]
+                        )
+                        if success:
+                            st.success(msg)
+                        else:
+                            st.warning(msg)
+
     else:
         st.markdown(f"""
         <div class="idle">
@@ -1646,6 +1679,26 @@ elif st.session_state.app_view == "Intraday MTF":
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
+
+                    col_track, _ = st.columns([2, 2])
+                    with col_track:
+                        track_intra_btn = st.button(f"📌 Track {selected_stock} for Intraday Performance", key="track_intra_signal_btn", use_container_width=True, type="secondary")
+                    
+                    if track_intra_btn:
+                        success, msg = add_tracked_signal(
+                            symbol=selected_stock,
+                            sig_type="Intraday",
+                            entry_price=stock_sig["Price"],
+                            stop_loss=stock_sig["Stop_Loss"],
+                            target_1=stock_sig["Target_1"],
+                            target_2=stock_sig["Target_2"],
+                            score=stock_sig["Score"],
+                            action=stock_sig["Signal"]
+                        )
+                        if success:
+                            st.success(msg)
+                        else:
+                            st.warning(msg)
 
                     st.markdown(f"#### 📈 15-Minute Price Action vs VWAP ({selected_stock})")
                     m_recent = m_df.tail(75).copy()
@@ -2103,9 +2156,10 @@ elif st.session_state.app_view == "Performance Monitor":
     </div>
     """, unsafe_allow_html=True)
 
-    perf_tab_swing, perf_tab_intra_opt = st.tabs([
-        "🚀 Swing Signals Performance",
-        "⚡ Intraday & Options Performance"
+    perf_tab_swing, perf_tab_intra_opt, perf_tab_manual = st.tabs([
+        "🚀 Swing Signals (Auto)",
+        "⚡ Intraday & Options (Auto)",
+        "📌 Tracked Watchlist (Manual)"
     ])
 
     # ── TAB 1: Swing Signals Performance ──
@@ -2280,4 +2334,62 @@ elif st.session_state.app_view == "Performance Monitor":
             except Exception as e:
                 status_p.error(f"Error evaluating intraday & options performance: {e}")
                 st.exception(e)
+
+    # ── TAB 3: Tracked Watchlist (Manual) ──
+    with perf_tab_manual:
+        st.markdown("#### 📌 Manually Tracked Watchlist")
+        st.caption("Displays the performance of signals you have manually selected and saved for tracking.")
+
+        tracked_signals = load_tracked_signals()
+        if not tracked_signals:
+            st.info("No manually tracked signals in your watchlist. Save signals from Swing Results or Intraday Deep-Dive to track them here!")
+        else:
+            run_manual_perf_btn = st.button("🔄 Refresh Watchlist Performance", type="primary", use_container_width=True)
+            
+            # Auto-run on load or when clicked
+            with st.spinner("Evaluating live watchlist performance..."):
+                df_tracked = evaluate_tracked_signals_performance()
+                
+            if not df_tracked.empty:
+                # Summary metrics
+                t_total = len(df_tracked)
+                t_wins = len(df_tracked[df_tracked["Outcome"].str.contains("Target")])
+                t_loss = len(df_tracked[df_tracked["Outcome"].str.contains("Stop")])
+                t_active = len(df_tracked[df_tracked["Outcome"] == "Active"])
+                
+                t_closed = t_wins + t_loss
+                t_win_rate = (t_wins / t_closed * 100.0) if t_closed > 0 else 0.0
+                t_avg_ret = df_tracked["Return %"].mean()
+                
+                tm1, tm2, tm3, tm4 = st.columns(4)
+                tm1.metric("Tracked Signals", f"{t_total}")
+                tm2.metric("Win Rate", f"{t_win_rate:.1f}%")
+                tm3.metric("Avg Return", f"{t_avg_ret:+.2f}%")
+                tm4.metric("Active Trades", f"{t_active}")
+                
+                st.markdown("### 📑 Live Watchlist Details")
+                st.dataframe(
+                    style_generic_performance_dataframe(df_tracked.copy(), theme=st.session_state.theme),
+                    use_container_width=True,
+                    hide_index=True
+                )
+                
+                # Delete tracked signal section
+                st.markdown("---")
+                st.markdown("#### ❌ Untrack a Signal")
+                del_col1, del_col2 = st.columns([3, 1])
+                with del_col1:
+                    tracked_options = [f"{s['symbol']} ({s['type']} - {s['signal_date']})" for s in tracked_signals]
+                    sig_to_del = st.selectbox("Select signal to remove from tracking", tracked_options, key="del_tracked_sig_select")
+                with del_col2:
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    del_btn = st.button("❌ Remove Signal", key="del_tracked_sig_btn", use_container_width=True)
+                    
+                if del_btn and sig_to_del:
+                    # Find index to delete
+                    idx_to_del = tracked_options.index(sig_to_del)
+                    removed_sig = tracked_signals.pop(idx_to_del)
+                    save_tracked_signals(tracked_signals)
+                    st.success(f"Removed {removed_sig['symbol']} ({removed_sig['type']}) from your watchlist.")
+                    st.rerun()
 

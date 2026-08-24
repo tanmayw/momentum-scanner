@@ -142,6 +142,18 @@
 
 ---
 
+## Phase 12: Manual Signal Tracking & Watchlist ✅
+
+- [x] 12.1 Added manual tracking backend helpers (`load_tracked_signals`, `save_tracked_signals`, `add_tracked_signal`, `evaluate_tracked_signals_performance`) in `performance_monitor.py`.
+- [x] 12.2 Integrated `📌 Track Signal` button and symbol selector below Swing scan results.
+- [x] 12.3 Integrated `📌 Track [Symbol] for Intraday Performance` button in Intraday Stock Deep-Dive.
+- [x] 12.4 Added `📌 Tracked Watchlist (Manual)` tab under Performance Monitor to evaluate returns, P&L, targets, and stops of tracked setups in real-time.
+- [x] 12.5 Added Untrack action allowing users to delete signals from the JSON watchlist.
+- [x] 12.6 Created and passed unit tests in `test_performance_engine.py`.
+- [x] 12.7 Updated specifications (`spec.md`) and tasks (`tasks.md`) documentation.
+
+---
+
 ## Backlog / Future Enhancements
 
 - [ ] B1. Greeks calculation (Delta, Gamma, Theta, Vega) using analytical Black-Scholes formulas.
@@ -150,4 +162,5 @@
 - [ ] B4. Sector/industry filter (show only specific NSE sectors).
 - [ ] B5. Watchlist persistence (save/load to local JSON or browser session).
 - [ ] B6. Weekly email/Telegram digest of top qualified options setups.
+
 
