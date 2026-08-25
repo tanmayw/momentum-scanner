@@ -1,50 +1,44 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+# Nifty Momentum, Intraday & Options Scanner Constitution
+
+**Version**: 2.5.0 | **Ratified**: 2026-08-23
+
+---
 
 ## Core Principles
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+### I. Simplicity, Performance & Tri-Mode Architecture
+The application is a pure, self-contained Python & Streamlit application (`streamlit_app.py`, `intraday_scanner.py`, `options_engine.py`) providing three synchronized trading modes:
+1. **Swing Momentum Scanner** (Daily · Weekly · Monthly across all Nifty 500 stocks).
+2. **Intraday MTF Scanner** (Daily · Hourly · 15-Minute real-time execution with VWAP & ATR risk controls).
+3. **Options Chain Strategy Layer** (Multi-Timeframe Gated Strategy Selection: Bull Call Spreads, Bear Put Spreads, Strangles, and Payoff Visualizations).
+Zero third-party SaaS dependencies or paid data subscriptions are required.
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+### II. Local-First Caching & Fast Data Pipeline
+- Daily OHLCV data for the Nifty 500 universe is cached on local disk (`cache/` directory, Parquet format, keyed by date) running in **< 3 seconds**.
+- Intraday & Options scans fetch lightweight multi-timeframe bundles (`2y 1d`, `60d 1h`, `30d 15m`) and normalized option chains on-demand for targeted liquid universes.
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+### III. Spec-Driven Technical Engines
+- **Swing Engine**: Strictly preserves the two-layer scoring architecture: Momentum Score (60%) + Entry Score (40%) = Final Score (100) mapped to discrete scoring tables defined in `spec.md`.
+- **Intraday Engine**: Strictly implements Multi-Timeframe alignment (Daily & Hourly trend structure + 15m RSI, VWAP, EMA 9/20, volume surge, and 20-bar breakout).
+- **Options Strategy Engine**: Strictly follows the mandatory flow: **MTF Direction/Score $\to$ Option Chain Analysis $\to$ Chain Gate ($\ge 75$) $\to$ Strategy Selection $\to$ Strike Selection $\to$ Risk Gate $\to$ Execution Recommendation**.
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+### IV. Aesthetic Excellence & Dual-Theme Consistency
+- Dual-theme engine (Light Mode by default & Accessible Dark Terminal) is standard across all views.
+- Monospace typography (`JetBrains Mono`) for financial figures, custom KPI cards, responsive layout (`1060px` desktop container, mobile-first expanders), and interactive TradingView deep links.
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+### V. Risk-First Output & Dynamic Position Sizing
+- **Swing Mode**: Setups with Risk/Reward < 1.5 are strictly excluded from output.
+- **Intraday Mode**: Every candidate computes an automated 15m ATR Stop Loss, Target 1 (+1%), Target 2 (+2%), and a fractional position size calculated from user capital and risk %.
+- **Options Mode**: Fixed-risk debit spreads are prioritized over naked options; trades where Max Loss exceeds the user's defined risk budget are gated out (`"Maximum loss exceeds risk budget"`).
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+### VI. Universe Flexibility & Cross-Module Handoff
+- Swing mode always operates on the full Nifty 500 constituent list.
+- Intraday & Options modes support liquid presets (Nifty 50, F&O High Beta, Banks, IT, Auto/Metals), custom symbol watchlists, and direct 1-click handoff between modules.
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+---
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+## Technology Stack
 
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
-
-## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
-
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
-
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+- **Framework**: Streamlit (`>=1.30.0`)
+- **Data Engine**: Pandas (`>=2.2`), NumPy (`>=1.26`), PyArrow (`>=15.0.0`), yfinance (`>=0.2.50`), Requests (`>=2.31`) (for NSE API)
+- **Port**: 8501 (default Streamlit port, local/cloud deployment)

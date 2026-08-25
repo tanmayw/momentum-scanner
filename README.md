@@ -121,9 +121,15 @@ my-scanner/
 ├── options_engine.py       # Options chain analysis, strategy selection & payoff engine
 ├── requirements.txt        # Dependencies (streamlit, yfinance, pandas, numpy, pyarrow)
 ├── cache/                  # Daily Parquet cache for Nifty 500 prices
-└── .specify/               # 📚 Project spec kit
-    ├── spec.md             # Full scoring, technical & options specification (v2.5.0)
-    ├── plan.md             # Architecture & implementation plan (v2.5.0)
-    ├── tasks.md            # Task history & backlog (v2.5.0)
-    └── constitution.md     # Core design principles (v2.5.0)
+├── .specify/               # 📚 Project spec kit configuration & templates
+│   ├── memory/
+│   │   └── constitution.md # Core design principles (v2.5.0)
+│   └── feature.json        # Points to the currently active feature spec folder
+└── specs/                  # 📚 Multi-feature specifications
+    ├── 001-swing-momentum-scanner/  # Swing scanner specs, plan, and tasks
+    ├── 002-intraday-scanner/         # Intraday scanner specs, plan, and tasks
+    ├── 003-options-strategy-engine/  # Options strategy engine specs, plan, and tasks
+    ├── 004-option-chain-analysis/    # Option chain analysis specs, plan, and tasks
+    ├── 005-risk-management/          # Stop loss, sizing, and gating specs, plan, and tasks
+    └── 006-performance-monitoring/   # Caching, watchlist, and tracking specs, plan, and tasks
 ```
